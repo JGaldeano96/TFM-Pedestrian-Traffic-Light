@@ -2,6 +2,10 @@
 # DATASETS
 # ============================================================
 
-data/*
-!data/.gitkeep
+# Ignorar el contenido de data
+data/**
+
+# Mantener la estructura de carpetas
+!data/
+!data/**/
 !data/**/.gitkeep
