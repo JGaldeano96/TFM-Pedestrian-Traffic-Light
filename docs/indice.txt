@@ -1,25 +1,143 @@
-# Detección y clasificación de semáforos peatonales mediante Deep Learning
+# Índice del Trabajo Fin de Máster
 
-## Descripción
+## 1. Introducción *(1 página)*
 
-...
+### 1.1. Contexto y motivación
+### 1.2. Objetivos del trabajo
+### 1.3. Alcance y limitaciones
 
-## Arquitectura
+---
 
-...
+## 2. Estado del arte *(2 páginas)*
 
-## Estructura del proyecto
+### 2.1. Sistemas de asistencia para personas con discapacidad visual
+### 2.2. Detección de objetos mediante Deep Learning
+### 2.3. Clasificación de imágenes mediante redes neuronales convolucionales
+### 2.4. Modelos seleccionados
 
-...
+---
 
-## Flujo de trabajo
+## 3. Metodología *(8 páginas)*
 
-...
+### 3.1. Arquitectura general del sistema
 
-## Instalación
+- Descripción del pipeline.
+- Componentes del sistema.
+- Flujo de procesamiento.
 
-...
+### 3.2. Adquisición de datos
 
-## Estado del proyecto
+- Captura de vídeos.
+- Escenarios de grabación.
+- Condiciones de iluminación.
+- Diversidad de situaciones.
 
-...
+### 3.3. Procesamiento de vídeos
+
+- Conversión de vídeos.
+- Extracción de fotogramas.
+- Organización de directorios.
+
+### 3.4. Generación y organización del conjunto de datos
+
+- Selección de imágenes.
+- División por vídeos.
+- Organización del proyecto.
+- Estructura de carpetas.
+
+### 3.5. Etiquetado de imágenes
+
+- Herramienta de etiquetado.
+- Criterios de anotación.
+- Bounding boxes.
+- Clasificación del estado del semáforo.
+
+### 3.6. Generación automática de los conjuntos de entrenamiento
+
+- Exportación desde Label Studio.
+- Generación del dataset para YOLO.
+- Generación del dataset para el clasificador.
+
+### 3.7. Entrenamiento del detector de semáforos peatonales
+
+- Configuración del modelo.
+- Transfer Learning.
+- Hiperparámetros.
+- Estrategia de entrenamiento.
+
+### 3.8. Entrenamiento del clasificador del estado del semáforo
+
+- Extracción automática de recortes.
+- Arquitectura seleccionada.
+- Configuración del entrenamiento.
+
+---
+
+## 4. Resultados *(4 páginas)*
+
+### 4.1. Evaluación del detector
+
+- mAP
+- Precision
+- Recall
+
+### 4.2. Evaluación del clasificador
+
+- Accuracy
+- Matriz de confusión
+- Métricas de clasificación
+
+### 4.3. Análisis de casos representativos
+
+- Casos de éxito.
+- Casos de fallo.
+- Ejemplos visuales.
+
+---
+
+## 5. Discusión *(2 páginas)*
+
+### 5.1. Limitaciones del sistema
+
+- Escenas complejas.
+- Objetos pequeños.
+- Iluminación adversa.
+- Oclusiones.
+
+### 5.2. Posibles mejoras
+
+- Active Learning.
+- SAHI para objetos pequeños.
+- Tracking temporal.
+- Optimización para dispositivos móviles.
+
+---
+
+## 6. Conclusiones y trabajo futuro *(1 página)*
+
+### 6.1. Conclusiones
+
+### 6.2. Líneas de trabajo futuro
+
+---
+
+## 7. Bibliografía *(1–2 páginas)*
+
+---
+
+## 8. Anexos *(No computan en el límite de páginas)*
+
+### A. Estructura del proyecto
+
+### B. Scripts desarrollados
+
+### C. Configuración de entrenamiento
+
+### D. Hiperparámetros utilizados
+
+### E. Resultados adicionales
+
+### F. Flujogramas del sistema
+
+### G. Manual de uso del proyecto
+
