@@ -1,3 +1,12 @@
+"""
+Cuenta el número de fotogramas extraídos para cada vídeo.
+
+El script recorre las carpetas de fotogramas generadas durante el proceso de extracción,
+cuenta las imágenes almacenadas en cada una y muestra un resumen con el número de vídeos
+procesados, el total de imágenes y la media de fotogramas por vídeo.
+"""
+
+
 from pathlib import Path
 
 # ============================================================
@@ -44,3 +53,5 @@ print(f"Total de imágenes : {total_images}")
 
 if total_videos > 0:
     print(f"Media por vídeo   : {total_images / total_videos:.2f}")
+    
+    print("=" * 60)

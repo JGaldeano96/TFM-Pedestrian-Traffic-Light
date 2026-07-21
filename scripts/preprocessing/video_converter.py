@@ -1,3 +1,17 @@
+"""
+Preprocesa los vídeos del proyecto para unificar su formato en MP4.
+
+El script recorre un directorio de entrada buscando archivos .mov y .mp4. Los vídeos MOV
+se convierten a MP4 mediante FFmpeg (H.264/AAC), mientras que los archivos MP4 se copian
+directamente sin recodificación. Si el vídeo ya existe en el directorio de salida, se omite
+su procesamiento.
+
+Durante la ejecución se muestra el progreso de la conversión y, al finalizar, se presenta
+un resumen con el número de vídeos convertidos, copiados, omitidos, errores y el tiempo
+total de procesamiento.
+"""
+
+
 from pathlib import Path
 import subprocess
 import shutil

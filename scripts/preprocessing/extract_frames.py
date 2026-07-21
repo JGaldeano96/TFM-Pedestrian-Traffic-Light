@@ -1,3 +1,15 @@
+"""
+Extrae fotogramas de los vídeos procesados para la creación del dataset.
+
+El script recorre todos los vídeos MP4 del directorio de entrada y extrae fotogramas a una
+frecuencia configurable (FPS) mediante FFmpeg. Cada vídeo genera una carpeta con sus
+correspondientes imágenes en formato JPG. Si un vídeo ya ha sido procesado, se omite.
+
+Al finalizar, se muestra un resumen con el número de vídeos procesados, omitidos, errores
+y el tiempo total de ejecución.
+"""
+
+
 from pathlib import Path
 import subprocess
 import time
