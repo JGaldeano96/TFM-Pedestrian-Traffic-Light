@@ -5,6 +5,7 @@ import warnings
 import json
 import shutil
 import yaml
+import cv2
 
 
 ################################################
@@ -967,3 +968,449 @@ def generate_yolo_dataset(
 
     print("\nDataset:")
     print(yolo_dataset_dir)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+# ============================================================
+# CLASIFICADOR
+# ============================================================
+
+
+
+
+
+
+# ============================================================
+# CLASIFICADOR - FUNCIONES AUXILIARES
+# ============================================================
+
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+
+def _create_classifier_directories(
+    classifier_dataset_dir: Path,
+) -> dict[str, Path]:
+    """
+    Crea la estructura del dataset de clasificación.
+
+    classifier/
+    ├── train/
+    │   ├── Red/
+    │   └── Green/
+    └── val/
+        ├── Red/
+        └── Green/
+
+    Si el directorio ya existe se elimina su contenido.
+
+    Returns
+    -------
+    dict[str, Path]
+        Diccionario con todas las rutas creadas.
+    """
+
+    _clean_directory(classifier_dataset_dir)
+
+    directories = {}
+
+    for subset in ("train", "val"):
+
+        for state in ("Red", "Green"):
+
+            path = (
+                classifier_dataset_dir
+                / subset
+                / state
+            )
+
+            path.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            directories[(subset, state)] = path
+
+    return directories
+
+
+def _crop_bbox(
+    image: np.ndarray,
+    x_center: float,
+    y_center: float,
+    width: float,
+    height: float,
+) -> np.ndarray:
+    """
+    Recorta una bounding box en formato YOLO.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Imagen original.
+
+    x_center, y_center : float
+        Coordenadas normalizadas del centro.
+
+    width, height : float
+        Tamaño normalizado de la bounding box.
+
+    Returns
+    -------
+    np.ndarray
+        Recorte correspondiente al objeto.
+
+    Raises
+    ------
+    ValueError
+        Si el recorte resulta inválido.
+    """
+
+    image_height, image_width = image.shape[:2]
+
+    x1 = int((x_center - width / 2) * image_width)
+    y1 = int((y_center - height / 2) * image_height)
+
+    x2 = int((x_center + width / 2) * image_width)
+    y2 = int((y_center + height / 2) * image_height)
+
+    x1 = max(0, x1)
+    y1 = max(0, y1)
+
+    x2 = min(image_width, x2)
+    y2 = min(image_height, y2)
+
+    if x2 <= x1 or y2 <= y1:
+
+        raise ValueError(
+            "Bounding box inválida."
+        )
+
+    crop = image[
+        y1:y2,
+        x1:x2,
+    ]
+
+    if crop.size == 0:
+
+        raise ValueError(
+            "El recorte está vacío."
+        )
+
+    return crop
+
+
+def _save_classifier_crop(
+    crop: np.ndarray,
+    output_dir: Path,
+    filename: str,
+    object_id: str,
+) -> None:
+    """
+    Guarda un recorte del clasificador.
+
+    El nombre generado será:
+
+        IMG_000123_abcd1234.jpg
+    """
+
+    output_path = (
+        output_dir
+        / f"{Path(filename).stem}_{object_id}.jpg"
+    )
+
+    success = cv2.imwrite(
+        str(output_path),
+        crop,
+    )
+
+    if not success:
+
+        raise IOError(
+            f"No se pudo guardar {output_path}"
+        )
+
+
+def _map_classifier_label(
+    state: str,
+) -> str:
+    """
+    Convierte las etiquetas originales a las utilizadas
+    por el clasificador.
+
+    Red   -> Red
+    Green -> Green
+    Off   -> Red
+    """
+
+    mapping = {
+        "Red": "Red",
+        "Green": "Green",
+        "Off": "Red",
+    }
+
+    try:
+
+        return mapping[state]
+
+    except KeyError as exc:
+
+        raise ValueError(
+            f"Estado desconocido: {state}"
+        ) from exc
+
+
+def _validate_classifier_dataset(
+    classifier_dataset_dir: Path,
+) -> None:
+    """
+    Comprueba la integridad del dataset generado.
+    """
+
+    print("\nValidating classifier dataset...")
+
+    for subset in ("train", "val"):
+
+        for state in ("Red", "Green"):
+
+            directory = (
+                classifier_dataset_dir
+                / subset
+                / state
+            )
+
+            if not directory.exists():
+
+                raise RuntimeError(
+                    f"No existe {directory}"
+                )
+
+            images = list(
+                directory.glob("*.jpg")
+            )
+
+            if len(images) == 0:
+
+                raise RuntimeError(
+                    f"La carpeta {directory} está vacía."
+                )
+
+            for image_path in images:
+
+                image = cv2.imread(
+                    str(image_path)
+                )
+
+                if image is None:
+
+                    raise RuntimeError(
+                        f"Imagen corrupta: {image_path}"
+                    )
+
+    print("Classifier dataset validation passed.")
+    
+    
+    
+    
+    
+    
+def generate_classifier_dataset(
+    root_dir: Path,
+    json_path: Path,
+    split_path: Path,
+    classifier_dataset_dir: Path,
+    image_size: int,
+) -> None:
+    """
+    Genera un dataset para el clasificador de estados del semáforo.
+
+    Cada imagen generada corresponde al recorte de un único
+    semáforo anotado.
+
+    Actualmente:
+
+        Off -> Red
+    """
+
+    print("=" * 70)
+    print("GENERATING CLASSIFIER DATASET")
+    print("=" * 70)
+
+    # --------------------------------------------------------
+    # Leer anotaciones
+    # --------------------------------------------------------
+
+    print("\nLoading annotations...")
+
+    df = load_dataset(json_path)
+
+    print(f"Objects : {len(df)}")
+    print(f"Images  : {df['filename'].nunique()}")
+    print(f"Videos  : {df['video_id'].nunique()}")
+
+    # --------------------------------------------------------
+    # Leer split
+    # --------------------------------------------------------
+
+    if not split_path.exists():
+
+        raise FileNotFoundError(
+            f"No existe el split:\n{split_path}"
+        )
+
+    print(f"\nLoading split: {split_path.name}")
+
+    with open(
+        split_path,
+        "r",
+        encoding="utf-8",
+    ) as f:
+
+        split = json.load(f)
+
+    train_videos = set(split["train"])
+    val_videos = set(split["val"])
+
+    # --------------------------------------------------------
+    # Preparar directorios
+    # --------------------------------------------------------
+
+    print("\nPreparing directories...")
+
+    directories = _create_classifier_directories(
+        classifier_dataset_dir
+    )
+
+    # --------------------------------------------------------
+    # Generar recortes
+    # --------------------------------------------------------
+
+    print("\nGenerating crops...")
+
+    generated = 0
+
+    for _, row in df.iterrows():
+
+        image = cv2.imread(
+            str(row["image_path"])
+        )
+
+        if image is None:
+
+            raise RuntimeError(
+                f"No se pudo leer:\n{row['image_path']}"
+            )
+
+        crop = _crop_bbox(
+            image=image,
+            x_center=row["x_center"],
+            y_center=row["y_center"],
+            width=row["width"],
+            height=row["height"],
+        )
+
+        # ----------------------------------------------------
+        # Redimensionar el recorte
+        # ----------------------------------------------------
+
+        crop = cv2.resize(
+            crop,
+            (image_size, image_size),
+            interpolation=cv2.INTER_AREA,
+        )
+
+        label = _map_classifier_label(
+            row["state"]
+        )
+
+        if row["video_id"] in train_videos:
+
+            subset = "train"
+
+        elif row["video_id"] in val_videos:
+
+            subset = "val"
+
+        else:
+
+            raise RuntimeError(
+                f"El vídeo '{row['video_id']}' "
+                "no aparece en el split."
+            )
+
+        output_dir = directories[
+            (subset, label)
+        ]
+
+        _save_classifier_crop(
+            crop=crop,
+            output_dir=output_dir,
+            filename=row["filename"],
+            object_id=row["object_id"],
+        )
+
+        generated += 1
+
+    print(f"Crops generated : {generated}")
+
+    # --------------------------------------------------------
+    # Validación
+    # --------------------------------------------------------
+
+    _validate_classifier_dataset(
+        classifier_dataset_dir
+    )
+
+    # --------------------------------------------------------
+    # Resumen final
+    # --------------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("CLASSIFIER DATASET GENERATED")
+    print("=" * 70)
+
+    train_red = len(
+        list(
+            (classifier_dataset_dir / "train" / "Red").glob("*.jpg")
+        )
+    )
+
+    train_green = len(
+        list(
+            (classifier_dataset_dir / "train" / "Green").glob("*.jpg")
+        )
+    )
+
+    val_red = len(
+        list(
+            (classifier_dataset_dir / "val" / "Red").glob("*.jpg")
+        )
+    )
+
+    val_green = len(
+        list(
+            (classifier_dataset_dir / "val" / "Green").glob("*.jpg")
+        )
+    )
+
+    print("\nTRAIN")
+    print(f"Red   : {train_red}")
+    print(f"Green : {train_green}")
+
+    print("\nVAL")
+    print(f"Red   : {val_red}")
+    print(f"Green : {val_green}")
+
+    print(f"\nImage size : {image_size}x{image_size}")
+    print(f"Total crops : {generated}")
+
+    print("\nDataset:")
+    print(classifier_dataset_dir)
