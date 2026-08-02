@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from statistics import mean, median, stdev
 
 # Ruta al JSON exportado por Label Studio
-JSON_PATH = Path("/home/jgaldeano/tfm/data/annotation_exports/dataset_v1.json")
+JSON_PATH = Path("/home/jgaldeano/tfm/data/annotation_exports/dataset_v2.json")
 
 
 def print_section(title):

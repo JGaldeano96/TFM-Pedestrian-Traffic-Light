@@ -782,21 +782,34 @@ def generate_yolo_dataset(
         video_id = source_image.parent.name
         filename = source_image.name
 
+        # ----------------------------------------------------
+        # Vídeos sin anotaciones (background)
+        # ----------------------------------------------------
+
+        if (
+            video_id not in train_videos
+            and
+            video_id not in val_videos
+        ):
+
+            print(
+                f"Video {video_id} no aparece en el split "
+                "(sin anotaciones). Se asigna a TRAIN."
+            )
+
+            train_videos.add(video_id)
+
+        # ----------------------------------------------------
+
         if video_id in train_videos:
 
             subset = "train"
             destination = train_images_dir / filename
 
-        elif video_id in val_videos:
+        else:
 
             subset = "val"
             destination = val_images_dir / filename
-
-        else:
-
-            raise ValueError(
-                f"El vídeo '{video_id}' no aparece en el split."
-            )
 
         image_split[filename] = {
             "subset": subset,

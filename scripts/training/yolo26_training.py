@@ -4,26 +4,20 @@ from ultralytics import YOLO
 
 # ============================================================
 # RUTA RAÍZ DEL PROYECTO
-
-# Esto hace que la ruta de partida sea la carpeta del proyecto 
 # ============================================================
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 # ============================================================
 # PARAMETRIZACIÓN DEL ENTRENAMIENTO
-
-# Esto ayuda a que el script sea parametrizable y no sea 
-# necesario tener uno por cada versión del dataset y tamaño
-# de imagen
 # ============================================================
 
-DATASET_VERSION = "v1"
+DATASET_VERSION = "v2"
 
-MODEL_NAME = "yolo26n" # ["yolo26n", "yolo26s"]
+MODEL_NAME = "yolo26n"  # ["yolo26n", "yolo26s"]
 MODEL_WEIGHTS = "yolo26n.pt"
 
-IMAGE_SIZE = 640 # [640, 800, 960, 1088]
+IMAGE_SIZE = 640  # [640, 800, 960, 1088]
 
 # ============================================================
 # RUTAS
@@ -46,10 +40,33 @@ RESULTS_DIR = (
 )
 
 # ============================================================
+# PESOS DEL MODELO
+# ============================================================
+
+if DATASET_VERSION == "v1":
+
+    WEIGHTS = MODEL_WEIGHTS
+
+else:
+
+    previous_version = f"v{int(DATASET_VERSION[1:]) - 1}"
+
+    WEIGHTS = (
+        ROOT_DIR
+        / "results"
+        / "yolo"
+        / f"dataset_{previous_version}"
+        / str(IMAGE_SIZE)
+        / MODEL_NAME
+        / "weights"
+        / "best.pt"
+    )
+
+# ============================================================
 # ENTRENAMIENTO
 # ============================================================
 
-model = YOLO(MODEL_WEIGHTS)
+model = YOLO(str(WEIGHTS))
 
 results = model.train(
     data=str(DATASET_YAML),

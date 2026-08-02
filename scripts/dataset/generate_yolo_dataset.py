@@ -19,7 +19,7 @@ from scripts.utils.dataset_functions import generate_yolo_dataset
 # DATASET VERSION
 # ============================================================
 
-DATASET_VERSION = "v1"
+DATASET_VERSION = "v2"
 
 
 # ============================================================
