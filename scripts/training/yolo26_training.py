@@ -14,10 +14,10 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 
 DATASET_VERSION = "v2"
 
-MODEL_NAME = "yolo26n"  # ["yolo26n", "yolo26s"]
-MODEL_WEIGHTS = "yolo26n.pt"
+MODEL_NAME = "yolo26s"  # ["yolo26n", "yolo26s"]
+MODEL_WEIGHTS = "yolo26s.pt"
 
-IMAGE_SIZE = 640  # [640, 800, 960, 1088]
+IMAGE_SIZE = 1088  # [640, 800, 960, 1088]
 
 # ============================================================
 # RUTAS
