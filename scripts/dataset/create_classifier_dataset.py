@@ -22,7 +22,7 @@ from scripts.utils.dataset_functions import (
 # DATASET VERSION
 # ============================================================
 
-DATASET_VERSION = "v1"
+DATASET_VERSION = "v2"
 
 
 # ============================================================
