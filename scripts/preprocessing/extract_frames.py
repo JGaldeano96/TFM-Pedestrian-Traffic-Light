@@ -1,29 +1,45 @@
 """
 Extrae fotogramas de los vídeos procesados para la creación del dataset.
 
-El script recorre todos los vídeos MP4 del directorio de entrada y extrae fotogramas a una
-frecuencia configurable (FPS) mediante FFmpeg. Cada vídeo genera una carpeta con sus
-correspondientes imágenes en formato JPG. Si un vídeo ya ha sido procesado, se omite.
+El script recorre todos los vídeos MP4 del directorio de entrada y extrae
+fotogramas a una frecuencia configurable (FPS) mediante FFmpeg.
 
-Al finalizar, se muestra un resumen con el número de vídeos procesados, omitidos, errores
-y el tiempo total de ejecución.
+Cada vídeo genera una carpeta con sus correspondientes imágenes en formato
+JPG. Si un vídeo ya ha sido procesado, se omite.
+
+Al finalizar, se muestra un resumen con el número de vídeos procesados,
+omitidos, errores y el tiempo total de ejecución.
 """
-
 
 from pathlib import Path
 import subprocess
 import time
 
+
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 
-INPUT_DIR = Path("/home/jgaldeano/tfm/data/source_data/processed_data")
-OUTPUT_DIR = Path("/home/jgaldeano/tfm/data/source_data/frames")
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
+INPUT_DIR = (
+    ROOT_DIR
+    / "data"
+    / "source_data"
+    / "processed_data"
+)
+
+OUTPUT_DIR = (
+    ROOT_DIR
+    / "data"
+    / "source_data"
+    / "frames"
+)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 FPS = 3
+
 
 # ============================================================
 # VÍDEOS
@@ -44,6 +60,7 @@ print("FRAME EXTRACTION")
 print("=" * 60)
 print(f"Vídeos encontrados: {total}\n")
 
+
 # ============================================================
 # PROCESAMIENTO
 # ============================================================
@@ -57,6 +74,8 @@ for index, video in enumerate(videos, start=1):
     print(f"[{index}/{total}] {video.name}")
 
     # --------------------------------------------------------
+    # COMPROBAR SI YA HA SIDO PROCESADO
+    # --------------------------------------------------------
 
     if frame_folder.exists():
 
@@ -66,9 +85,20 @@ for index, video in enumerate(videos, start=1):
 
         continue
 
+    # --------------------------------------------------------
+    # CREAR CARPETA DE FRAMES
+    # --------------------------------------------------------
+
     frame_folder.mkdir(parents=True)
 
-    output_pattern = frame_folder / f"{video_code}_frame%06d.jpg"
+    output_pattern = (
+        frame_folder
+        / f"{video_code}_frame%06d.jpg"
+    )
+
+    # --------------------------------------------------------
+    # EXTRAER FRAMES
+    # --------------------------------------------------------
 
     try:
 
@@ -90,9 +120,13 @@ for index, video in enumerate(videos, start=1):
             check=True,
         )
 
-        num_frames = len(list(frame_folder.glob("*.jpg")))
+        num_frames = len(
+            list(frame_folder.glob("*.jpg"))
+        )
 
-        print(f"   ✓ Frames extraídos: {num_frames}\n")
+        print(
+            f"   ✓ Frames extraídos: {num_frames}\n"
+        )
 
         processed += 1
 
@@ -101,6 +135,7 @@ for index, video in enumerate(videos, start=1):
         errors += 1
 
         print(f"   ✗ ERROR: {e}\n")
+
 
 # ============================================================
 # RESUMEN
