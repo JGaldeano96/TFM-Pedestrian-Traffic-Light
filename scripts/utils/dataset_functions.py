@@ -1427,3 +1427,769 @@ def generate_classifier_dataset(
 
     print("\nDataset:")
     print(classifier_dataset_dir)
+    
+    
+    
+    
+    
+############################################################
+# GENERATE_YOLO_TEST_DATASET.PY
+############################################################
+
+def _create_test_dataset_yaml(
+    dataset_yaml: Path,
+    yolo_dataset_dir: Path,
+) -> None:
+    """
+    Crea el fichero dataset.yaml para un dataset YOLO
+    independiente de testing.
+    """
+
+    dataset = {
+
+        "path": str(yolo_dataset_dir),
+
+        "test": "images",
+
+        "names": {
+            0: "pedestrian_traffic_light",
+        },
+    }
+
+    with open(
+        dataset_yaml,
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        yaml.safe_dump(
+            dataset,
+            f,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+
+
+def _validate_test_dataset(
+    images: set[str],
+    labels_dir: Path,
+) -> None:
+    """
+    Comprueba la integridad básica de un dataset YOLO
+    independiente de testing.
+
+    Cada imagen debe tener un fichero .txt asociado.
+    El fichero puede estar vacío si la imagen es background.
+    """
+
+    print("\nValidating test dataset...")
+
+    image_stems = {
+        Path(img).stem
+        for img in images
+    }
+
+    label_stems = {
+        label.stem
+        for label in labels_dir.glob("*.txt")
+    }
+
+    missing_labels = (
+        image_stems
+        -
+        label_stems
+    )
+
+    if missing_labels:
+
+        raise RuntimeError(
+            "Imágenes TEST sin etiqueta:\n"
+            f"{missing_labels}"
+        )
+
+    extra_labels = (
+        label_stems
+        -
+        image_stems
+    )
+
+    if extra_labels:
+
+        raise RuntimeError(
+            "Etiquetas TEST sin imagen asociada:\n"
+            f"{extra_labels}"
+        )
+
+    print("Test dataset validation passed.")
+
+
+def generate_yolo_test_dataset(
+    root_dir: Path,
+    json_path: Path,
+    output_dir: Path,
+) -> None:
+    """
+    Genera un dataset YOLO independiente de testing
+    a partir de una exportación de Label Studio.
+
+    Estructura generada:
+
+        output_dir/
+        ├── images/
+        │   ├── image_001.jpg
+        │   ├── image_002.jpg
+        │   └── ...
+        │
+        ├── labels/
+        │   ├── image_001.txt
+        │   ├── image_002.txt
+        │   └── ...
+        │
+        └── dataset.yaml
+
+    No utiliza train/val ni ningún split.
+    """
+
+    images_dir = (
+        output_dir
+        / "images"
+    )
+
+    labels_dir = (
+        output_dir
+        / "labels"
+    )
+
+    dataset_yaml = (
+        output_dir
+        / "dataset.yaml"
+    )
+
+    print("=" * 70)
+    print("GENERATING YOLO TEST DATASET")
+    print("=" * 70)
+
+    print(
+        f"\nSource JSON:"
+        f"\n{json_path}"
+    )
+
+    print(
+        f"\nOutput directory:"
+        f"\n{output_dir}"
+    )
+
+    # --------------------------------------------------------
+    # Comprobar JSON
+    # --------------------------------------------------------
+
+    if not json_path.exists():
+
+        raise FileNotFoundError(
+            f"No existe el fichero JSON: {json_path}"
+        )
+
+    # --------------------------------------------------------
+    # Preparar directorios
+    # --------------------------------------------------------
+
+    print("\nCleaning previous test dataset...")
+
+    _clean_directory(images_dir)
+    _clean_directory(labels_dir)
+
+    # --------------------------------------------------------
+    # Leer tareas de Label Studio
+    # --------------------------------------------------------
+
+    print("\nLoading Label Studio tasks...")
+
+    with open(
+        json_path,
+        "r",
+        encoding="utf-8",
+    ) as f:
+
+        tasks = json.load(f)
+
+    print(
+        f"Tasks: {len(tasks)}"
+    )
+
+    # --------------------------------------------------------
+    # Cargar anotaciones
+    # --------------------------------------------------------
+
+    print("\nLoading annotations...")
+
+    df = load_dataset(json_path)
+
+    print(
+        f"Objects : {len(df)}"
+    )
+
+    print(
+        f"Images  : {df['filename'].nunique()}"
+    )
+
+    print(
+        f"Videos  : {df['video_id'].nunique()}"
+    )
+
+    # --------------------------------------------------------
+    # Copiar imágenes
+    # --------------------------------------------------------
+
+    copied_images = set()
+
+    image_paths = {}
+
+    print("\nCopying images...")
+
+    for task in tasks:
+
+        image_path = task["data"]["image"]
+
+        # Label Studio suele almacenar:
+        #
+        # /local-files/?d=data/annotation_frames/...
+        #
+        # Extraemos la ruta real después de ?d=
+
+        relative_path = (
+            image_path
+            .split("?d=")[-1]
+        )
+
+        source_image = (
+            root_dir
+            / relative_path
+        )
+
+        if not source_image.exists():
+
+            raise FileNotFoundError(
+                f"No existe la imagen:\n"
+                f"{source_image}"
+            )
+
+        filename = source_image.name
+
+        destination = (
+            images_dir
+            / filename
+        )
+
+        image_paths[filename] = destination
+
+        if filename not in copied_images:
+
+            shutil.copy2(
+                source_image,
+                destination,
+            )
+
+            copied_images.add(filename)
+
+    print(
+        f"Images copied: {len(copied_images)}"
+    )
+
+    # --------------------------------------------------------
+    # Comprobar nombres duplicados
+    # --------------------------------------------------------
+
+    if len(copied_images) != len(image_paths):
+
+        raise RuntimeError(
+            "Se han detectado nombres de imagen duplicados."
+        )
+
+    # --------------------------------------------------------
+    # Generar etiquetas YOLO
+    # --------------------------------------------------------
+
+    print("\nGenerating YOLO labels...")
+
+    grouped = df.groupby(
+        "filename",
+        observed=True,
+    )
+
+    generated_labels = 0
+    annotated_images = 0
+    background_images = 0
+
+    for filename, annotations in grouped:
+
+        if filename not in image_paths:
+
+            raise RuntimeError(
+                f"La imagen {filename} tiene anotaciones "
+                "pero no aparece en las tareas de Label Studio."
+            )
+
+        label_path = (
+            labels_dir
+            / Path(filename).with_suffix(".txt").name
+        )
+
+        with open(
+            label_path,
+            "w",
+            encoding="utf-8",
+        ) as f:
+
+            for _, row in annotations.iterrows():
+
+                f.write(
+                    f"0 "
+                    f"{row['x_center']:.6f} "
+                    f"{row['y_center']:.6f} "
+                    f"{row['width']:.6f} "
+                    f"{row['height']:.6f}\n"
+                )
+
+        generated_labels += 1
+        annotated_images += 1
+
+    # --------------------------------------------------------
+    # Crear TXT vacíos para backgrounds
+    # --------------------------------------------------------
+
+    for filename in copied_images:
+
+        if filename in grouped.groups:
+            continue
+
+        label_path = (
+            labels_dir
+            / Path(filename).with_suffix(".txt").name
+        )
+
+        label_path.touch()
+
+        generated_labels += 1
+        background_images += 1
+
+    print(
+        f"Annotated images : {annotated_images}"
+    )
+
+    print(
+        f"Background images: {background_images}"
+    )
+
+    print(
+        f"Label files      : {generated_labels}"
+    )
+
+    # --------------------------------------------------------
+    # Validar dataset
+    # --------------------------------------------------------
+
+    _validate_test_dataset(
+        images=copied_images,
+        labels_dir=labels_dir,
+    )
+
+    # --------------------------------------------------------
+    # Crear dataset.yaml
+    # --------------------------------------------------------
+
+    print("\nCreating dataset.yaml...")
+
+    _create_test_dataset_yaml(
+        dataset_yaml=dataset_yaml,
+        yolo_dataset_dir=output_dir,
+    )
+
+    # --------------------------------------------------------
+    # Resumen final
+    # --------------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("YOLO TEST DATASET GENERATED")
+    print("=" * 70)
+
+    print(
+        f"Images           : {len(copied_images)}"
+    )
+
+    print(
+        f"Annotated images : {annotated_images}"
+    )
+
+    print(
+        f"Background images: {background_images}"
+    )
+
+    print(
+        f"Label files      : {generated_labels}"
+    )
+
+    print(
+        "\nDataset:"
+    )
+
+    print(output_dir)
+
+    print(
+        "\nYAML:"
+    )
+
+    print(dataset_yaml)
+
+    print("=" * 70)
+    
+    
+    
+    
+def _create_classifier_test_directories(
+    output_dir: Path,
+) -> dict[str, Path]:
+    """
+    Crea la estructura de un dataset independiente de testing
+    para clasificación.
+
+    Estructura:
+
+        output_dir/
+        ├── Red/
+        └── Green/
+
+    Si el directorio ya existe, se elimina su contenido.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Directorio raíz del dataset de test.
+
+    Returns
+    -------
+    dict[str, Path]
+        Diccionario con las rutas de las clases.
+    """
+
+    _clean_directory(
+        output_dir
+    )
+
+    directories = {}
+
+    for state in ("Red", "Green"):
+
+        path = (
+            output_dir
+            / state
+        )
+
+        path.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        directories[state] = path
+
+    return directories
+
+
+def _validate_classifier_test_dataset(
+    output_dir: Path,
+) -> None:
+    """
+    Comprueba la integridad básica de un dataset independiente
+    de testing para el clasificador.
+    """
+
+    print("\nValidating classifier test dataset...")
+
+    for state in ("Red", "Green"):
+
+        directory = (
+            output_dir
+            / state
+        )
+
+        if not directory.exists():
+
+            raise RuntimeError(
+                f"No existe {directory}"
+            )
+
+        images = list(
+            directory.glob("*.jpg")
+        )
+
+        if len(images) == 0:
+
+            raise RuntimeError(
+                f"La carpeta {directory} está vacía."
+            )
+
+        for image_path in images:
+
+            image = cv2.imread(
+                str(image_path)
+            )
+
+            if image is None:
+
+                raise RuntimeError(
+                    f"Imagen corrupta: {image_path}"
+                )
+
+    print(
+        "Classifier test dataset validation passed."
+    )
+    
+    
+def generate_classifier_test_dataset(
+    root_dir: Path,
+    json_path: Path,
+    output_dir: Path,
+    image_size: int,
+) -> None:
+    """
+    Genera un dataset independiente de testing para el
+    clasificador de estados del semáforo.
+
+    El dataset se genera directamente a partir de una
+    exportación de Label Studio y no utiliza ningún split.
+
+    Cada imagen generada corresponde al recorte de un único
+    semáforo anotado.
+
+    Actualmente:
+
+        Red   -> Red
+        Green -> Green
+        Off   -> Red
+
+    Parameters
+    ----------
+    root_dir : Path
+        Directorio raíz del proyecto.
+
+    json_path : Path
+        Exportación JSON de Label Studio.
+
+    output_dir : Path
+        Directorio donde se almacenará el dataset.
+
+    image_size : int
+        Tamaño final de los crops.
+    """
+
+    print("=" * 70)
+    print("GENERATING CLASSIFIER TEST DATASET")
+    print("=" * 70)
+
+    print(
+        f"\nTest dataset: {output_dir.name}"
+    )
+
+    print(
+        f"Annotations: {json_path.name}"
+    )
+
+    # --------------------------------------------------------
+    # Comprobar JSON
+    # --------------------------------------------------------
+
+    if not json_path.exists():
+
+        raise FileNotFoundError(
+            f"No existe el fichero de anotaciones:\n"
+            f"{json_path}"
+        )
+
+    # --------------------------------------------------------
+    # Leer anotaciones
+    # --------------------------------------------------------
+
+    print("\nLoading annotations...")
+
+    df = load_dataset(
+        json_path
+    )
+
+    print(
+        f"Objects : {len(df)}"
+    )
+
+    print(
+        f"Images  : {df['filename'].nunique()}"
+    )
+
+    print(
+        f"Videos  : {df['video_id'].nunique()}"
+    )
+
+    # --------------------------------------------------------
+    # Preparar directorios
+    # --------------------------------------------------------
+
+    print("\nPreparing directories...")
+
+    directories = _create_classifier_test_directories(
+        output_dir
+    )
+
+    # --------------------------------------------------------
+    # Generar crops
+    # --------------------------------------------------------
+
+    print("\nGenerating crops...")
+
+    generated = 0
+
+    for _, row in df.iterrows():
+
+        image_path = Path(
+            row["image_path"]
+        )
+
+        # ----------------------------------------------------
+        # Comprobar imagen
+        # ----------------------------------------------------
+
+        if not image_path.exists():
+
+            raise FileNotFoundError(
+                f"No existe la imagen:\n"
+                f"{image_path}"
+            )
+
+        image = cv2.imread(
+            str(image_path)
+        )
+
+        if image is None:
+
+            raise RuntimeError(
+                f"No se pudo leer:\n"
+                f"{image_path}"
+            )
+
+        # ----------------------------------------------------
+        # Crop
+        # ----------------------------------------------------
+
+        crop = _crop_bbox(
+            image=image,
+            x_center=row["x_center"],
+            y_center=row["y_center"],
+            width=row["width"],
+            height=row["height"],
+        )
+
+        # ----------------------------------------------------
+        # Resize
+        # ----------------------------------------------------
+
+        crop = cv2.resize(
+            crop,
+            (
+                image_size,
+                image_size,
+            ),
+            interpolation=cv2.INTER_AREA,
+        )
+
+        # ----------------------------------------------------
+        # Mapear etiqueta
+        # ----------------------------------------------------
+
+        label = _map_classifier_label(
+            row["state"]
+        )
+
+        # ----------------------------------------------------
+        # Directorio de salida
+        # ----------------------------------------------------
+
+        output_class_dir = directories[
+            label
+        ]
+
+        # ----------------------------------------------------
+        # Guardar crop
+        # ----------------------------------------------------
+
+        _save_classifier_crop(
+            crop=crop,
+            output_dir=output_class_dir,
+            filename=row["filename"],
+            object_id=row["object_id"],
+        )
+
+        generated += 1
+
+    print(
+        f"Crops generated : {generated}"
+    )
+
+    # --------------------------------------------------------
+    # Validación
+    # --------------------------------------------------------
+
+    _validate_classifier_test_dataset(
+        output_dir
+    )
+
+    # --------------------------------------------------------
+    # Estadísticas
+    # --------------------------------------------------------
+
+    red_count = len(
+        list(
+            (
+                output_dir
+                / "Red"
+            ).glob("*.jpg")
+        )
+    )
+
+    green_count = len(
+        list(
+            (
+                output_dir
+                / "Green"
+            ).glob("*.jpg")
+        )
+    )
+
+    # --------------------------------------------------------
+    # Resumen
+    # --------------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("CLASSIFIER TEST DATASET GENERATED")
+    print("=" * 70)
+
+    print(
+        f"\nDataset: {output_dir.name}"
+    )
+
+    print("\nClasses")
+
+    print(
+        f"Red   : {red_count}"
+    )
+
+    print(
+        f"Green : {green_count}"
+    )
+
+    print(
+        f"\nImage size : "
+        f"{image_size}x{image_size}"
+    )
+
+    print(
+        f"Total crops : {generated}"
+    )
+
+    print("\nDataset:")
+    print(output_dir)
