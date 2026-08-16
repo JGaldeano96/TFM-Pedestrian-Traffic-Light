@@ -3,7 +3,20 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from ultralytics import YOLO
+
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+
+from sklearn.metrics import (
+    confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_curve,
+    auc,
+)
 
 
 # ============================================================
@@ -38,6 +51,8 @@ def evaluate_yolo_model(
     dict
         Métricas obtenidas durante la evaluación.
     """
+    
+    from ultralytics import YOLO
 
     model = YOLO(
         str(model_path)
@@ -448,4 +463,1193 @@ def generate_yolo_test_metrics(
 
     print(
         output_csv
+    )
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+# ============================================================
+# CNN CLASSIFIER TEST
+# ============================================================
+
+
+def _load_classifier_test_dataset(
+    dataset_dir: Path,
+    image_size: tuple[int, int] = (128, 128),
+    batch_size: int = 32,
+) -> tf.data.Dataset:
+    """
+    Carga un dataset independiente de test para el clasificador CNN.
+
+    Estructura esperada:
+
+        dataset_dir/
+        ├── Green/
+        └── Red/
+
+    image_dataset_from_directory() asigna automáticamente:
+
+        0 -> Green
+        1 -> Red
+
+    No se modifican las etiquetas dentro del Dataset.
+
+    La conversión a nuestra convención:
+
+        0 -> Red
+        1 -> Green
+
+    se realiza posteriormente al obtener las predicciones.
+    """
+
+    dataset = tf.keras.utils.image_dataset_from_directory(
+        dataset_dir,
+        labels="inferred",
+        label_mode="int",
+        image_size=image_size,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    return dataset
+
+
+# ============================================================
+# OBTENER PREDICCIONES
+# ============================================================
+
+def _get_classifier_predictions(
+    model: tf.keras.Model,
+    dataset: tf.data.Dataset,
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """
+    Obtiene las etiquetas reales y las probabilidades producidas
+    por el modelo.
+
+    El dataset de Keras utiliza:
+
+        0 -> Green
+        1 -> Red
+
+    Nuestra convención de evaluación utiliza:
+
+        0 -> Red
+        1 -> Green
+
+    Por tanto:
+
+        y_true = 1 - original_label
+
+    La salida sigmoid del modelo representa:
+
+        P(Green)
+    """
+
+    y_true = []
+
+    y_scores = []
+
+    # --------------------------------------------------------
+    # Recorrer dataset
+    # --------------------------------------------------------
+
+    for images, labels in dataset:
+
+        predictions = model.predict(
+            images,
+            verbose=0,
+        )
+
+        # ----------------------------------------------------
+        # Invertir etiquetas
+        #
+        # Keras:
+        #   0 -> Green
+        #   1 -> Red
+        #
+        # Evaluación:
+        #   0 -> Red
+        #   1 -> Green
+        # ----------------------------------------------------
+
+        labels = 1 - labels
+
+        y_true.extend(
+            labels.numpy()
+        )
+
+        y_scores.extend(
+            predictions.ravel()
+        )
+
+    # --------------------------------------------------------
+    # Convertir a NumPy
+    # --------------------------------------------------------
+
+    y_true = np.asarray(
+        y_true,
+        dtype=int,
+    )
+
+    y_scores = np.asarray(
+        y_scores,
+        dtype=float,
+    )
+
+    # --------------------------------------------------------
+    # Rutas
+    # --------------------------------------------------------
+
+    file_paths = list(
+        dataset.file_paths
+    )
+
+    return (
+        y_true,
+        y_scores,
+        file_paths,
+    )
+
+
+# ============================================================
+# MÉTRICAS DE CLASIFICACIÓN
+# ============================================================
+
+def _calculate_classifier_metrics(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+    threshold: float = 0.5,
+) -> dict:
+    """
+    Calcula las principales métricas de clasificación binaria.
+
+    Convención:
+
+        0 = Red
+        1 = Green
+
+    y_scores:
+
+        P(Green)
+
+    Regla:
+
+        P(Green) >= threshold -> Green
+        P(Green) < threshold  -> Red
+    """
+
+    # --------------------------------------------------------
+    # Predicciones
+    # --------------------------------------------------------
+
+    y_pred = (
+        y_scores >= threshold
+    ).astype(int)
+
+    # --------------------------------------------------------
+    # Confusion matrix
+    # --------------------------------------------------------
+
+    tn, fp, fn, tp = confusion_matrix(
+        y_true,
+        y_pred,
+        labels=[
+            0,
+            1,
+        ],
+    ).ravel()
+
+    # --------------------------------------------------------
+    # Accuracy
+    # --------------------------------------------------------
+
+    accuracy = accuracy_score(
+        y_true,
+        y_pred,
+    )
+
+    # --------------------------------------------------------
+    # Precision
+    # --------------------------------------------------------
+
+    precision = precision_score(
+        y_true,
+        y_pred,
+        zero_division=0,
+    )
+
+    # --------------------------------------------------------
+    # Recall
+    # --------------------------------------------------------
+
+    recall = recall_score(
+        y_true,
+        y_pred,
+        zero_division=0,
+    )
+
+    # --------------------------------------------------------
+    # F1
+    # --------------------------------------------------------
+
+    f1 = f1_score(
+        y_true,
+        y_pred,
+        zero_division=0,
+    )
+
+    # --------------------------------------------------------
+    # Specificity
+    # --------------------------------------------------------
+
+    specificity = (
+        tn / (tn + fp)
+        if (tn + fp) > 0
+        else 0.0
+    )
+
+    # --------------------------------------------------------
+    # False Positive Rate
+    #
+    # FP = Red -> Green
+    # --------------------------------------------------------
+
+    false_positive_rate = (
+        fp / (fp + tn)
+        if (fp + tn) > 0
+        else 0.0
+    )
+
+    # --------------------------------------------------------
+    # False Negative Rate
+    #
+    # FN = Green -> Red
+    # --------------------------------------------------------
+
+    false_negative_rate = (
+        fn / (fn + tp)
+        if (fn + tp) > 0
+        else 0.0
+    )
+
+    # --------------------------------------------------------
+    # False Green Rate
+    #
+    # Porcentaje de rojos reales clasificados como Green.
+    # --------------------------------------------------------
+
+    false_green_rate = (
+        fp / (fp + tn)
+        if (fp + tn) > 0
+        else 0.0
+    )
+
+    return {
+
+        "threshold": threshold,
+
+        "accuracy": accuracy,
+
+        "precision": precision,
+
+        "recall": recall,
+
+        "f1": f1,
+
+        "specificity": specificity,
+
+        "false_positive_rate": (
+            false_positive_rate
+        ),
+
+        "false_negative_rate": (
+            false_negative_rate
+        ),
+
+        "false_green_rate": (
+            false_green_rate
+        ),
+
+        "TN": tn,
+
+        "FP": fp,
+
+        "FN": fn,
+
+        "TP": tp,
+    }
+
+
+# ============================================================
+# ROC / AUC / YOUDEN
+# ============================================================
+
+def _calculate_roc_metrics(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+) -> dict:
+    """
+    Calcula ROC-AUC y threshold óptimo mediante Youden.
+
+    Convención:
+
+        0 = Red
+        1 = Green
+
+    y_scores:
+
+        P(Green)
+
+    Youden:
+
+        J = TPR - FPR
+    """
+
+    # --------------------------------------------------------
+    # ROC
+    # --------------------------------------------------------
+
+    fpr, tpr, thresholds = roc_curve(
+        y_true,
+        y_scores,
+    )
+
+    # --------------------------------------------------------
+    # AUC
+    # --------------------------------------------------------
+
+    roc_auc = auc(
+        fpr,
+        tpr,
+    )
+
+    # --------------------------------------------------------
+    # Eliminar threshold infinito
+    # --------------------------------------------------------
+
+    valid = np.isfinite(
+        thresholds
+    )
+
+    valid_fpr = fpr[
+        valid
+    ]
+
+    valid_tpr = tpr[
+        valid
+    ]
+
+    valid_thresholds = thresholds[
+        valid
+    ]
+
+    # --------------------------------------------------------
+    # Youden
+    #
+    # J = TPR - FPR
+    # --------------------------------------------------------
+
+    youden_scores = (
+        valid_tpr
+        - valid_fpr
+    )
+
+    youden_index = np.argmax(
+        youden_scores
+    )
+
+    youden_threshold = float(
+        valid_thresholds[
+            youden_index
+        ]
+    )
+
+    return {
+
+        "roc_auc": roc_auc,
+
+        "youden_threshold": (
+            youden_threshold
+        ),
+    }
+
+
+# ============================================================
+# MÉTRICAS POR THRESHOLD
+# ============================================================
+
+def _generate_classifier_threshold_metrics(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+) -> pd.DataFrame:
+    """
+    Calcula las métricas para thresholds entre 0.00 y 1.00
+    con pasos de 0.01.
+    """
+
+    thresholds = np.round(
+        np.arange(
+            0.00,
+            1.01,
+            0.01,
+        ),
+        2,
+    )
+
+    results = []
+
+    for threshold in thresholds:
+
+        metrics = _calculate_classifier_metrics(
+            y_true=y_true,
+            y_scores=y_scores,
+            threshold=float(threshold),
+        )
+
+        results.append(
+            metrics
+        )
+
+    return pd.DataFrame(
+        results
+    )
+
+
+# ============================================================
+# GUARDAR PREDICCIONES INDIVIDUALES
+# ============================================================
+
+def _save_classifier_predictions(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+    file_paths: list[str],
+    output_path: Path,
+    threshold: float = 0.5,
+) -> None:
+    """
+    Guarda las predicciones individuales realizadas sobre
+    el conjunto de test.
+
+    Convención:
+
+        0 = Red
+        1 = Green
+
+    probability_green:
+
+        P(Green)
+
+    error_type:
+
+        FP     -> Red real / Green predicho
+        FN     -> Green real / Red predicho
+        correct
+    """
+
+    # --------------------------------------------------------
+    # Predicciones
+    # --------------------------------------------------------
+
+    y_pred = (
+        y_scores >= threshold
+    ).astype(int)
+
+    rows = []
+
+    # --------------------------------------------------------
+    # Crear filas
+    # --------------------------------------------------------
+
+    for i in range(
+        len(y_true)
+    ):
+
+        true_label = int(
+            y_true[i]
+        )
+
+        predicted_label = int(
+            y_pred[i]
+        )
+
+        probability_green = float(
+            y_scores[i]
+        )
+
+        # ----------------------------------------------------
+        # Tipo de error
+        # ----------------------------------------------------
+
+        if (
+            true_label == 0
+            and predicted_label == 1
+        ):
+
+            error_type = "FP"
+
+        elif (
+            true_label == 1
+            and predicted_label == 0
+        ):
+
+            error_type = "FN"
+
+        else:
+
+            error_type = "correct"
+
+        # ----------------------------------------------------
+        # Nombres legibles
+        # ----------------------------------------------------
+
+        true_class = (
+            "Red"
+            if true_label == 0
+            else "Green"
+        )
+
+        predicted_class = (
+            "Red"
+            if predicted_label == 0
+            else "Green"
+        )
+
+        # ----------------------------------------------------
+        # Guardar
+        # ----------------------------------------------------
+
+        rows.append({
+
+            "filename": Path(
+                file_paths[i]
+            ).name,
+
+            "filepath": file_paths[i],
+
+            "true_label": true_label,
+
+            "true_class": true_class,
+
+            "predicted_label": predicted_label,
+
+            "predicted_class": predicted_class,
+
+            "probability_green": (
+                probability_green
+            ),
+
+            "threshold": threshold,
+
+            "error_type": error_type,
+        })
+
+    # --------------------------------------------------------
+    # DataFrame
+    # --------------------------------------------------------
+
+    predictions_df = pd.DataFrame(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # Guardar
+    # --------------------------------------------------------
+
+    predictions_df.to_csv(
+        output_path,
+        index=False,
+    )
+
+
+# ============================================================
+# GENERAR MÉTRICAS DEL TEST
+# ============================================================
+
+
+def generate_classifier_test_metrics(
+    results_root: Path,
+    test_dataset_root: Path,
+    output_dir: Path,
+    image_size: tuple[int, int] = (128, 128),
+    batch_size: int = 32,
+) -> None:
+    """
+    Evalúa los clasificadores CNN entrenados con dataset_v1
+    y dataset_v2 sobre conjuntos independientes de test
+    diurno y nocturno.
+
+    Convención utilizada en la evaluación:
+
+        0 = Red
+        1 = Green
+
+    Salida sigmoid:
+
+        P(Green)
+
+    El threshold utilizado para las métricas principales
+    y las predicciones individuales es:
+
+        threshold = 0.5
+
+    El archivo de análisis por threshold mantiene todos
+    los thresholds entre 0.00 y 1.00 para permitir estudiar
+    el comportamiento del modelo.
+
+    ROC-AUC y Youden se calculan únicamente como métricas
+    descriptivas del conjunto de test. El threshold de Youden
+    NO se utiliza para calcular las métricas principales ni
+    para generar las predicciones individuales.
+    """
+
+    print("=" * 70)
+
+    print(
+        "GENERATING CNN CLASSIFIER TEST METRICS"
+    )
+
+    print("=" * 70)
+
+    print(
+        "\nClass mapping:"
+        "\n  0 -> Red"
+        "\n  1 -> Green"
+    )
+
+    print(
+        "\nModel output:"
+        "\n  sigmoid -> P(Green)"
+    )
+
+    print(
+        "\nDecision rule:"
+        "\n  probability >= 0.5 -> Green"
+        "\n  probability < 0.5  -> Red"
+    )
+
+    print(
+        "\nThreshold selection:"
+        "\n  Main evaluation threshold -> 0.5"
+    )
+
+    # ========================================================
+    # FIXED THRESHOLD
+    # ========================================================
+
+    TEST_THRESHOLD = 0.5
+
+    # ========================================================
+    # OUTPUT
+    # ========================================================
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # ========================================================
+    # MODELOS
+    # ========================================================
+
+    models = {
+
+        "dataset_v1": (
+            results_root
+            / "dataset_v1"
+            / "classifier_v1"
+            / "best.keras"
+        ),
+
+        "dataset_v2": (
+            results_root
+            / "dataset_v2"
+            / "classifier_v2"
+            / "best.keras"
+        ),
+    }
+
+    # ========================================================
+    # TEST DATASETS
+    # ========================================================
+
+    test_types = {
+
+        "diurn": (
+            test_dataset_root
+            / "diurn"
+        ),
+
+        "nocturn": (
+            test_dataset_root
+            / "nocturn"
+        ),
+    }
+
+    # ========================================================
+    # CHECK MODELS
+    # ========================================================
+
+    print(
+        "\nChecking models..."
+    )
+
+    for dataset_version, model_path in models.items():
+
+        if not model_path.exists():
+
+            raise FileNotFoundError(
+                f"No existe el modelo:\n"
+                f"{model_path}"
+            )
+
+        print(
+            f"{dataset_version}: "
+            f"{model_path}"
+        )
+
+    # ========================================================
+    # CHECK DATASETS
+    # ========================================================
+
+    print(
+        "\nChecking test datasets..."
+    )
+
+    for test_type, dataset_dir in test_types.items():
+
+        if not dataset_dir.exists():
+
+            raise FileNotFoundError(
+                f"No existe el dataset de test:\n"
+                f"{dataset_dir}"
+            )
+
+        print(
+            f"{test_type}: "
+            f"{dataset_dir}"
+        )
+
+    # ========================================================
+    # RESULTS
+    # ========================================================
+
+    metrics_results = []
+
+    threshold_results = []
+
+    # ========================================================
+    # EVALUATION
+    # ========================================================
+
+    for dataset_version, model_path in models.items():
+
+        print(
+            "\n" + "-" * 70
+        )
+
+        print(
+            f"Loading model: "
+            f"{dataset_version}"
+        )
+
+        model = tf.keras.models.load_model(
+            model_path
+        )
+
+        for test_type, dataset_dir in test_types.items():
+
+            print(
+                "\n" + "-" * 70
+            )
+
+            print(
+                f"Testing:"
+                f"\n  Model      : {dataset_version}"
+                f"\n  Test type  : {test_type}"
+                f"\n  Dataset    : {dataset_dir}"
+            )
+
+            # =================================================
+            # DATASET
+            # =================================================
+
+            dataset = _load_classifier_test_dataset(
+                dataset_dir=dataset_dir,
+                image_size=image_size,
+                batch_size=batch_size,
+            )
+
+            print(
+                f"Found "
+                f"{len(dataset.file_paths)} "
+                f"files belonging to "
+                f"{len(dataset.class_names)} "
+                f"classes."
+            )
+
+            print(
+                f"  Classes    : "
+                f"{dataset.class_names}"
+            )
+
+            # -------------------------------------------------
+            # Keras:
+            #
+            # 0 -> Green
+            # 1 -> Red
+            #
+            # Evaluación:
+            #
+            # 0 -> Red
+            # 1 -> Green
+            # -------------------------------------------------
+
+            print(
+                "  Original Keras mapping:"
+                "\n    0 -> Green"
+                "\n    1 -> Red"
+            )
+
+            print(
+                "  Evaluation mapping:"
+                "\n    0 -> Red"
+                "\n    1 -> Green"
+            )
+
+            print(
+                f"  Images     : "
+                f"{len(dataset.file_paths)}"
+            )
+
+            # =================================================
+            # PREDICTIONS
+            # =================================================
+
+            (
+                y_true,
+                y_scores,
+                file_paths,
+            ) = _get_classifier_predictions(
+                model=model,
+                dataset=dataset,
+            )
+
+            # =================================================
+            # BASIC SANITY CHECK
+            # =================================================
+
+            print(
+                f"\n  Real Red   : "
+                f"{np.sum(y_true == 0)}"
+            )
+
+            print(
+                f"  Real Green : "
+                f"{np.sum(y_true == 1)}"
+            )
+
+            print(
+                f"  Mean P(Green): "
+                f"{np.mean(y_scores):.4f}"
+            )
+
+            print(
+                f"  Min P(Green): "
+                f"{np.min(y_scores):.4f}"
+            )
+
+            print(
+                f"  Max P(Green): "
+                f"{np.max(y_scores):.4f}"
+            )
+
+            # =================================================
+            # ROC / AUC / YOUDEN
+            #
+            # Se calculan como métricas descriptivas.
+            #
+            # IMPORTANTE:
+            #
+            # El threshold de Youden NO se utiliza para
+            # las métricas principales.
+            # =================================================
+
+            roc_metrics = _calculate_roc_metrics(
+                y_true=y_true,
+                y_scores=y_scores,
+            )
+
+            youden_threshold = (
+                roc_metrics[
+                    "youden_threshold"
+                ]
+            )
+
+            # =================================================
+            # MÉTRICAS PRINCIPALES
+            #
+            # IMPORTANTE:
+            #
+            # Se utiliza exclusivamente threshold = 0.5.
+            # =================================================
+
+            metrics = _calculate_classifier_metrics(
+                y_true=y_true,
+                y_scores=y_scores,
+                threshold=TEST_THRESHOLD,
+            )
+
+            # -------------------------------------------------
+            # Añadir ROC-AUC y Youden
+            # -------------------------------------------------
+
+            metrics.update({
+                "roc_auc": (
+                    roc_metrics[
+                        "roc_auc"
+                    ]
+                ),
+
+                "youden_threshold": (
+                    youden_threshold
+                ),
+            })
+
+            # -------------------------------------------------
+            # Metadata
+            # -------------------------------------------------
+
+            metrics.update({
+
+                "dataset": dataset_version,
+
+                "test_type": test_type,
+
+                "model_path": str(
+                    model_path
+                ),
+
+                "num_images": len(
+                    y_true
+                ),
+            })
+
+            # -------------------------------------------------
+            # Guardar resultados
+            # -------------------------------------------------
+
+            metrics_results.append(
+                metrics
+            )
+
+            # =================================================
+            # THRESHOLD ANALYSIS
+            #
+            # Este CSV mantiene TODOS los thresholds.
+            #
+            # No utilizamos Youden aquí porque queremos
+            # analizar cómo cambia la performance del modelo
+            # según el threshold.
+            # =================================================
+
+            threshold_df = (
+                _generate_classifier_threshold_metrics(
+                    y_true=y_true,
+                    y_scores=y_scores,
+                )
+            )
+
+            threshold_df.insert(
+                0,
+                "dataset",
+                dataset_version,
+            )
+
+            threshold_df.insert(
+                1,
+                "test_type",
+                test_type,
+            )
+
+            threshold_results.append(
+                threshold_df
+            )
+
+            # =================================================
+            # INDIVIDUAL PREDICTIONS
+            #
+            # Se utiliza threshold = 0.5.
+            # =================================================
+
+            predictions_path = (
+                output_dir
+                / (
+                    f"predictions_"
+                    f"{dataset_version}_"
+                    f"{test_type}.csv"
+                )
+            )
+
+            _save_classifier_predictions(
+                y_true=y_true,
+                y_scores=y_scores,
+                file_paths=file_paths,
+                output_path=predictions_path,
+                threshold=TEST_THRESHOLD,
+            )
+
+            # =================================================
+            # PRINT RESULTS
+            # =================================================
+
+            print(
+                "\n  Evaluation threshold:"
+            )
+
+            print(
+                f"  Threshold  : "
+                f"{TEST_THRESHOLD:.4f}"
+            )
+
+            print(
+                f"  Youden thr : "
+                f"{youden_threshold:.4f}"
+            )
+
+            print(
+                f"\n  Accuracy   : "
+                f"{metrics['accuracy']:.4f}"
+            )
+
+            print(
+                f"  Precision  : "
+                f"{metrics['precision']:.4f}"
+            )
+
+            print(
+                f"  Recall     : "
+                f"{metrics['recall']:.4f}"
+            )
+
+            print(
+                f"  F1         : "
+                f"{metrics['f1']:.4f}"
+            )
+
+            print(
+                f"  Specificity: "
+                f"{metrics['specificity']:.4f}"
+            )
+
+            print(
+                f"  ROC-AUC    : "
+                f"{metrics['roc_auc']:.4f}"
+            )
+
+            print(
+                f"  TN         : "
+                f"{metrics['TN']}"
+            )
+
+            print(
+                f"  FP         : "
+                f"{metrics['FP']}"
+            )
+
+            print(
+                f"  FN         : "
+                f"{metrics['FN']}"
+            )
+
+            print(
+                f"  TP         : "
+                f"{metrics['TP']}"
+            )
+
+    # ========================================================
+    # GUARDAR MÉTRICAS
+    # ========================================================
+
+    metrics_df = pd.DataFrame(
+        metrics_results
+    )
+
+    metrics_path = (
+        output_dir
+        / "cnn_test_metrics.csv"
+    )
+
+    metrics_df.to_csv(
+        metrics_path,
+        index=False,
+    )
+
+    # ========================================================
+    # GUARDAR THRESHOLD METRICS
+    # ========================================================
+
+    threshold_df = pd.concat(
+        threshold_results,
+        ignore_index=True,
+    )
+
+    threshold_path = (
+        output_dir
+        / "cnn_test_threshold_metrics.csv"
+    )
+
+    threshold_df.to_csv(
+        threshold_path,
+        index=False,
+    )
+
+    # ========================================================
+    # RESUMEN
+    # ========================================================
+
+    print(
+        "\n" + "=" * 70
+    )
+
+    print(
+        "CNN TEST METRICS GENERATED"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    print(
+        f"\nMetrics:"
+        f"\n{metrics_path}"
+    )
+
+    print(
+        f"\nThreshold metrics:"
+        f"\n{threshold_path}"
+    )
+
+    print(
+        f"\nPredictions:"
+        f"\n{output_dir}"
+    )
+
+    print(
+        "\nEvaluation threshold:"
+        f"\n  {TEST_THRESHOLD:.4f}"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    print(
+        "\nTest evaluation completed successfully."
     )
