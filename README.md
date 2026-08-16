@@ -1,1700 +1,912 @@
-\# Pedestrian Traffic Light Detection and Classification
+# Pedestrian Traffic Light Detection and Classification
 
+Deep Learning system for the **detection and classification of pedestrian traffic lights** in urban environments, designed as a technological aid for people with visual impairment.
 
+The project combines an object detector based on **YOLO** with a dedicated **CNN classifier** to identify the state of each detected pedestrian traffic light.
 
-Deep Learning system for the \*\*detection and classification of pedestrian traffic lights\*\* in urban environments, designed as a technological aid for people with visual impairment.
+---
 
+## Table of Contents
 
+- [Overview](#overview)
+- [Objectives](#objectives)
+- [System Architecture](#system-architecture)
+  - [Stage 1 — Object Detection](#stage-1--object-detection)
+  - [Stage 2 — State Classification](#stage-2--state-classification)
+- [Models](#models)
+  - [YOLO Detector](#yolo-detector)
+  - [Traffic Light Classifier](#traffic-light-classifier)
+- [Data Augmentation](#data-augmentation)
+- [Dataset](#dataset)
+- [Dataset Generation Pipeline](#dataset-generation-pipeline)
+- [YOLO Dataset](#yolo-dataset)
+- [Classifier Dataset](#classifier-dataset)
+- [Independent Test Sets](#independent-test-sets)
+- [Data Leakage Prevention](#data-leakage-prevention)
+- [Training](#training)
+- [Evaluation](#evaluation)
+- [Threshold Analysis](#threshold-analysis)
+- [Explainability](#explainability)
+- [Project Structure](#project-structure)
+- [Environment](#environment)
+- [Installation](#installation)
+- [Dataset Generation](#dataset-generation)
+- [Reproducibility](#reproducibility)
+- [Results](#results)
+- [End-to-End Evaluation](#end-to-end-evaluation)
+- [Future Work](#future-work)
+- [Ethical and Safety Considerations](#ethical-and-safety-considerations)
+- [Technologies](#technologies)
+- [Author](#author)
+- [License](#license)
 
-The project combines an object detector based on \*\*YOLO\*\* with a dedicated \*\*CNN classifier\*\* to identify the state of each detected pedestrian traffic light.
+---
 
-
-
-\---
-
-
-
-\## Table of Contents
-
-
-
-\- \[Overview](#overview)
-
-\- \[Objectives](#objectives)
-
-\- \[System Architecture](#system-architecture)
-
-\- \[Models](#models)
-
-&#x20; - \[YOLO Detector](#yolo-detector)
-
-&#x20; - \[Traffic Light Classifier](#traffic-light-classifier)
-
-\- \[Dataset](#dataset)
-
-\- \[Dataset Pipeline](#dataset-pipeline)
-
-\- \[Training](#training)
-
-\- \[Evaluation](#evaluation)
-
-\- \[Independent Test Sets](#independent-test-sets)
-
-\- \[Project Structure](#project-structure)
-
-\- \[Environment](#environment)
-
-\- \[Installation](#installation)
-
-\- \[Usage](#usage)
-
-\- \[Results](#results)
-
-\- \[Future Work](#future-work)
-
-\- \[Technologies](#technologies)
-
-\- \[Author](#author)
-
-
-
-\---
-
-
-
-\# Overview
-
-
+# Overview
 
 Pedestrian traffic lights are a critical element when navigating urban environments. For people with visual impairment, determining whether a pedestrian crossing is currently safe can be difficult or impossible without additional assistance.
 
-
-
 This project explores a computer vision system capable of:
 
+1. Detecting pedestrian traffic lights in images.
+2. Localizing each traffic light using bounding boxes.
+3. Extracting the detected traffic light from the image.
+4. Classifying its current state.
+5. Providing the information required by a future assistive application.
 
+The system is designed around a **two-stage architecture**:
 
-1\. Detecting pedestrian traffic lights in images.
+**Input Image / Video**
 
-2\. Localizing each traffic light using bounding boxes.
+↓
 
-3\. Extracting the detected traffic light from the image.
+**YOLO Detector**
 
-4\. Classifying its current state.
+↓
 
-5\. Providing the information required by a future assistive application.
+**Bounding Box**
 
+↓
 
+**Traffic Light Crop**
 
-The system is designed around a \*\*two-stage architecture\*\*:
+↓
 
+**CNN Classifier**
 
+↓
 
-Input Image / Video  
-
-↓  
-
-YOLO Detector  
-
-↓  
-
-Bounding Box  
-
-↓  
-
-Traffic Light Crop  
-
-↓  
-
-CNN Classifier  
-
-↓  
-
-Red / Green
-
-
+**Red / Green**
 
 The detector and classifier are trained independently, allowing each component to be optimized for its specific task.
 
+---
 
-
-\---
-
-
-
-\# Objectives
-
-
+# Objectives
 
 The main objective of the project is to develop and evaluate a computer vision pipeline capable of recognizing pedestrian traffic lights and determining their state.
 
-
-
 The specific objectives are:
 
+- Develop a dataset containing pedestrian traffic lights captured from a first-person perspective.
+- Annotate pedestrian traffic lights using bounding boxes.
+- Train an object detection model using YOLO.
+- Train a convolutional neural network for traffic light state classification.
+- Evaluate the influence of image resolution on object detection.
+- Analyze classification errors using confusion matrices and different decision thresholds.
+- Analyze model interpretability using **Grad-CAM++**.
+- Evaluate the final models on independent test datasets.
+- Prepare the models for potential deployment on mobile or embedded devices using **TensorFlow Lite**.
 
+---
 
-\- Develop a dataset containing pedestrian traffic lights captured from a first-person perspective.
-
-\- Annotate pedestrian traffic lights using bounding boxes.
-
-\- Train an object detection model using YOLO.
-
-\- Train a convolutional neural network for traffic light state classification.
-
-\- Evaluate the influence of image resolution on object detection.
-
-\- Analyze classification errors using confusion matrices and different decision thresholds.
-
-\- Analyze model interpretability using \*\*Grad-CAM++\*\*.
-
-\- Evaluate the final models on independent test datasets.
-
-\- Prepare the models for potential deployment on mobile or embedded devices using \*\*TensorFlow Lite\*\*.
-
-
-
-\---
-
-
-
-\# System Architecture
-
-
+# System Architecture
 
 The complete system consists of two independent Deep Learning models.
 
-
-
-\## Stage 1 — Object Detection
-
-
+## Stage 1 — Object Detection
 
 The first model receives the complete image:
 
+**Image**
 
+↓
 
-Image  
+**YOLO**
 
-↓  
+↓
 
-YOLO  
-
-↓  
-
-Bounding Box + Confidence + Class
-
-
+**Bounding Box + Confidence + Class**
 
 The detector identifies pedestrian traffic lights regardless of their current state.
 
-
-
 The detection task therefore has a single class:
 
+**`pedestrian_traffic_light`**
 
+---
 
-\*\*pedestrian\_traffic\_light\*\*
-
-
-
-\---
-
-
-
-\## Stage 2 — State Classification
-
-
+## Stage 2 — State Classification
 
 The detected bounding box is then cropped from the original image.
 
+**YOLO Bounding Box**
 
+↓
 
-YOLO Bounding Box  
+**Crop**
 
-↓  
+↓
 
-Crop  
+**Resize to 128 × 128**
 
-↓  
+↓
 
-Resize to 128 × 128  
+**CNN**
 
-↓  
+↓
 
-CNN  
-
-↓  
-
-Red / Green
-
-
+**Red / Green**
 
 The classifier is a binary classifier.
 
-
-
 The original annotation states are mapped as follows:
 
-
-
 | Original state | Classifier class |
-
 |---|---|
-
 | `Red` | `Red` |
-
 | `Green` | `Green` |
-
 | `Off` | `Red` |
-
-
 
 The `Off` state is intentionally grouped with `Red` for the current binary classification formulation.
 
+---
 
+# Models
 
-\---
-
-
-
-\# Models
-
-
-
-\## YOLO Detector
-
-
+## YOLO Detector
 
 The object detector is based on the YOLO architecture and is trained using the Ultralytics implementation.
 
-
-
 Different model sizes and input resolutions are evaluated.
-
-
 
 Experiments include:
 
-
-
-\- YOLO Nano
-
-\- YOLO Small
-
-\- 640 × 640
-
-\- 800 × 800
-
-\- 960 × 960
-
-\- 1088 × 1088
-
-
+- YOLO Nano
+- YOLO Small
+- 640 × 640
+- 800 × 800
+- 960 × 960
+- 1088 × 1088
 
 The final detector is intended to provide a good balance between:
 
+- Detection accuracy
+- Inference speed
+- Computational cost
+- Potential mobile deployment
 
+The detector predicts a single class:
 
-\- Detection accuracy
+**`pedestrian_traffic_light`**
 
-\- Inference speed
+---
 
-\- Computational cost
-
-\- Potential mobile deployment
-
-
-
-The detector predicts:
-
-
-
-\*\*pedestrian\_traffic\_light\*\*
-
-
-
-\---
-
-
-
-\## Traffic Light Classifier
-
-
+## Traffic Light Classifier
 
 The classifier is implemented using TensorFlow/Keras.
 
-
-
 The input resolution is:
 
-
-
-\*\*128 × 128 × 3\*\*
-
-
+**128 × 128 × 3**
 
 The architecture is based on a custom convolutional neural network containing:
 
-
-
-\- Image rescaling
-
-\- Convolutional layers
-
-\- SiLU activation
-
-\- Max pooling
-
-\- Global Average Pooling
-
-\- Fully connected layers
-
-\- Sigmoid output
-
-
+- Image rescaling
+- Convolutional layers
+- SiLU activation
+- Max pooling
+- Global Average Pooling
+- Fully connected layers
+- Sigmoid output
 
 The output represents the probability of the positive class:
 
-
-
-\*\*P(Green)\*\*
-
-
+**P(Green)**
 
 The final classification is determined using a configurable decision threshold.
 
-
-
 For example:
 
+**P(Green) ≥ 0.5 → Green**
 
-
-\*\*P(Green) ≥ 0.5 → Green\*\*
-
-
-
-\*\*P(Green) < 0.5 → Red\*\*
-
-
+**P(Green) < 0.5 → Red**
 
 However, the threshold is not necessarily fixed at `0.5`. Threshold analysis is performed to study the trade-off between false positives and false negatives.
 
+---
 
-
-\---
-
-
-
-\# Data Augmentation
-
-
+# Data Augmentation
 
 Data augmentation is applied to the classifier during training to improve generalization.
 
-
-
 The transformations are designed to reproduce realistic variations that may occur when capturing pedestrian traffic lights.
-
-
 
 Examples include:
 
-
-
-\- Small rotations
-
-\- Horizontal translations
-
-\- Small zoom variations
-
-\- Contrast variations
-
-\- Brightness variations
-
-
+- Small rotations
+- Horizontal translations
+- Small zoom variations
+- Contrast variations
+- Brightness variations
 
 Large rotations or vertical flips are deliberately avoided.
 
-
-
 A pedestrian traffic light will not realistically appear upside down in the target application, so transformations that introduce physically implausible samples are avoided.
 
+---
 
-
-\---
-
-
-
-\# Dataset
-
-
+# Dataset
 
 The dataset was created using images captured from a pedestrian's point of view in urban environments.
 
-
-
-The annotation process was performed using \*\*Label Studio\*\*.
-
-
+The annotation process was performed using **Label Studio**.
 
 Each annotated traffic light contains:
 
-
-
-\- Image
-
-\- Bounding box
-
-\- Traffic light state
-
-\- Video identifier
-
-\- Object identifier
-
-
+- Image
+- Bounding box
+- Traffic light state
+- Video identifier
+- Object identifier
 
 The annotation states are:
 
+- `Red`
+- `Green`
+- `Off`
 
+---
 
-\- `Red`
-
-\- `Green`
-
-\- `Off`
-
-
-
-\---
-
-
-
-\# Dataset Generation Pipeline
-
-
+# Dataset Generation Pipeline
 
 The datasets are not manually copied into the final training structure.
 
-
-
 Instead, Python scripts generate the datasets automatically from the Label Studio exports.
-
-
 
 The general pipeline is:
 
+**Raw Images**
 
+↓
 
-Raw Images  
+**Label Studio**
 
-↓  
+↓
 
-Label Studio  
+**JSON Export**
 
-↓  
+↓
 
-JSON Export  
+**Dataset Processing**
 
-↓  
+↓
 
-Dataset Processing  
-
-↓  
-
-YOLO Dataset + Classifier Dataset
-
-
+**YOLO Dataset + Classifier Dataset**
 
 This makes the dataset generation process reproducible.
 
+---
 
-
-\---
-
-
-
-\# YOLO Dataset
-
-
+# YOLO Dataset
 
 The YOLO training dataset is generated from:
 
-
-
-`data/annotation\_exports/dataset\_vX.json`
-
-
+`data/annotation_exports/dataset_vX.json`
 
 and the corresponding video-level split:
 
-
-
-`data/splits/split\_vX.json`
-
-
+`data/splits/split_vX.json`
 
 The generated dataset follows the standard YOLO structure:
 
-
-
 `data/datasets/yolo/`
 
+- `images/`
+  - `train/`
+  - `val/`
+- `labels/`
+  - `train/`
+  - `val/`
+- `dataset.yaml`
 
+The split is performed at **video level**, rather than at individual image level.
 
-\- `images/`
+This is important because consecutive frames from the same video are highly correlated. Splitting individual frames could therefore introduce data leakage between training and validation sets.
 
-&#x20; - `train/`
+---
 
-&#x20; - `val/`
-
-\- `labels/`
-
-&#x20; - `train/`
-
-&#x20; - `val/`
-
-\- `dataset.yaml`
-
-
-
-The split is performed at \*\*video level\*\*, rather than at individual image level.
-
-
-
-This is important because consecutive frames from the same video are highly correlated. Splitting individual frames could therefore introduce data leakage between training and validation.
-
-
-
-\---
-
-
-
-\# Classifier Dataset
-
-
+# Classifier Dataset
 
 The classifier dataset is generated by:
 
-
-
-1\. Reading the Label Studio annotations.
-
-2\. Loading the original image.
-
-3\. Extracting each annotated bounding box.
-
-4\. Cropping the traffic light.
-
-5\. Resizing the crop to `128 × 128`.
-
-6\. Mapping the original state to the classifier class.
-
-7\. Assigning the crop to train or validation according to the video-level split.
-
-
+1. Reading the Label Studio annotations.
+2. Loading the original image.
+3. Extracting each annotated bounding box.
+4. Cropping the traffic light.
+5. Resizing the crop to `128 × 128`.
+6. Mapping the original state to the classifier class.
+7. Assigning the crop to train or validation according to the video-level split.
 
 The resulting structure is:
 
-
-
 `data/datasets/classifier/`
 
+- `train/`
+  - `Red/`
+  - `Green/`
+- `val/`
+  - `Red/`
+  - `Green/`
 
+---
 
-\- `train/`
-
-&#x20; - `Red/`
-
-&#x20; - `Green/`
-
-\- `val/`
-
-&#x20; - `Red/`
-
-&#x20; - `Green/`
-
-
-
-\---
-
-
-
-\# Independent Test Sets
-
-
+# Independent Test Sets
 
 A completely independent test set is maintained separately from the training and validation data.
 
-
-
 Two independent test datasets are used:
 
+`data/annotation_exports/`
 
-
-`data/annotation\_exports/`
-
-
-
-\- `test\_diurn.json`
-
-\- `test\_nocturn.json`
-
-
+- `test_diurn.json`
+- `test_nocturn.json`
 
 They represent two different environmental conditions:
 
-
-
-\- \*\*Diurnal\*\* — daytime conditions
-
-\- \*\*Nocturnal\*\* — nighttime conditions
-
-
+- **Diurnal** — daytime conditions
+- **Nocturnal** — nighttime conditions
 
 The datasets are intentionally kept separate.
 
-
-
 The corresponding YOLO test datasets are generated under:
 
+`data/datasets/yolo_test/`
 
-
-`data/datasets/yolo\_test/`
-
-
-
-\- `diurn/`
-
-\- `nocturn/`
-
-
+- `diurn/`
+- `nocturn/`
 
 The classifier will also use independent daytime and nighttime test datasets.
 
-
-
 These datasets are not used during training or model selection.
-
-
 
 This allows the final evaluation to provide a more realistic estimate of how well the models generalize to previously unseen data.
 
+---
 
-
-\---
-
-
-
-\# Data Leakage Prevention
-
-
+# Data Leakage Prevention
 
 A major consideration in this project is preventing data leakage.
 
-
-
 Images extracted from the same video are highly similar. Therefore, randomly splitting individual frames could result in nearly identical images appearing in both training and validation sets.
 
-
-
-To avoid this, the dataset split is performed using the \*\*video identifier\*\*.
-
-
+To avoid this, the dataset split is performed using the **video identifier**.
 
 For example:
 
-
-
-Video 000001  
+**Video 000001**
 
 → frame 001  
-
 → frame 002  
-
 → frame 003  
 
-→ TRAIN
-
-
+→ **TRAIN**
 
 while:
 
-
-
-Video 000002  
+**Video 000002**
 
 → frame 001  
-
 → frame 002  
-
 → frame 003  
 
-→ VALIDATION
-
-
+→ **VALIDATION**
 
 No frames from the same video should appear in both subsets.
 
-
-
 The independent test datasets are kept completely separate from the training and validation pipeline.
 
+---
 
+# Training
 
-\---
-
-
-
-\# Training
-
-
-
-\## YOLO
-
-
+## YOLO
 
 YOLO models are trained using the Ultralytics framework.
 
-
-
 Typical training parameters include:
 
-
-
-\- Epochs
-
-\- Image size
-
-\- Batch size
-
-\- Patience
-
-\- Automatic optimizer selection
-
-\- Data augmentation
-
-\- Multi-scale training configuration
-
-
+- Epochs
+- Image size
+- Batch size
+- Patience
+- Automatic optimizer selection
+- Data augmentation
+- Multi-scale training configuration
 
 Different input resolutions and model sizes are evaluated to determine the best accuracy/efficiency trade-off.
 
+---
 
-
-\---
-
-
-
-\## Classifier
-
-
+## Classifier
 
 The classifier is trained using TensorFlow/Keras.
 
-
-
 The training process uses:
 
-
-
-\- AdamW optimizer
-
-\- Binary Cross-Entropy loss
-
-\- ReduceLROnPlateau
-
-\- EarlyStopping
-
-\- ModelCheckpoint
-
-\- Data augmentation
-
-
+- AdamW optimizer
+- Binary Cross-Entropy loss
+- ReduceLROnPlateau
+- EarlyStopping
+- ModelCheckpoint
+- Data augmentation
 
 Example optimizer configuration:
 
-
-
-`AdamW(learning\_rate=3e-4)`
-
-
+`AdamW(learning_rate=3e-4)`
 
 The learning rate is dynamically reduced when validation performance stops improving.
 
-
-
 The training process uses `ReduceLROnPlateau` to improve convergence and allow the model to refine its weights with progressively smaller learning rates.
-
-
 
 Early stopping is used to prevent unnecessary training.
 
-
-
 The best model checkpoint is saved according to validation performance.
 
+---
 
-
-\---
-
-
-
-\# Evaluation
-
-
+# Evaluation
 
 The evaluation is not limited to accuracy.
 
-
-
-\## Object Detection
-
-
+## Object Detection
 
 The YOLO models are evaluated using standard object detection metrics, including:
 
-
-
-\- Precision
-
-\- Recall
-
-\- mAP@50
-
-\- mAP@50:95
-
-
+- Precision
+- Recall
+- mAP@50
+- mAP@50:95
 
 Different input resolutions and model sizes are compared.
 
+---
 
-
-\---
-
-
-
-\## Classification
-
-
+## Classification
 
 The classifier is evaluated using:
 
-
-
-\- Accuracy
-
-\- Precision
-
-\- Recall
-
-\- Confusion Matrix
-
-\- False Positives
-
-\- False Negatives
-
-\- Decision threshold analysis
-
-
+- Accuracy
+- Precision
+- Recall
+- Confusion Matrix
+- False Positives
+- False Negatives
+- Decision threshold analysis
 
 Particular attention is given to the distinction between false positives and false negatives.
 
+### False Positive
 
+A real **Red** traffic light is classified as **Green**.
 
-\### False Positive
+**Real: Red**
 
-
-
-A real \*\*Red\*\* traffic light is classified as \*\*Green\*\*.
-
-
-
-\*\*Real: Red\*\*
-
-
-
-\*\*Predicted: Green\*\*
-
-
+**Predicted: Green**
 
 This is particularly important because it could incorrectly indicate that crossing is safe.
 
+### False Negative
 
+A real **Green** traffic light is classified as **Red**.
 
-\### False Negative
+**Real: Green**
 
-
-
-A real \*\*Green\*\* traffic light is classified as \*\*Red\*\*.
-
-
-
-\*\*Real: Green\*\*
-
-
-
-\*\*Predicted: Red\*\*
-
-
+**Predicted: Red**
 
 This is conservative from a safety perspective but can reduce the usefulness of the system.
 
+---
 
-
-\---
-
-
-
-\# Threshold Analysis
-
-
+# Threshold Analysis
 
 The classifier outputs:
 
-
-
-\*\*P(Green)\*\*
-
-
+**P(Green)**
 
 Instead of assuming that `0.5` is always the optimal threshold, different thresholds are evaluated.
 
-
-
 For example:
 
+- `0.10`
+- `0.20`
+- `0.30`
+- `0.40`
+- `0.50`
+- `0.60`
+- `0.70`
+- `0.80`
+- `0.90`
 
-
-\- `0.10`
-
-\- `0.20`
-
-\- `0.30`
-
-\- `0.40`
-
-\- `0.50`
-
-\- `0.60`
-
-\- `0.70`
-
-\- `0.80`
-
-\- `0.90`
-
-
-
-The evolution of false positives and false negatives is analyzed across the complete `\[0, 1]` interval.
-
-
+The evolution of false positives and false negatives is analyzed across the complete `[0, 1]` interval.
 
 This makes it possible to select a threshold according to the requirements of the final application.
 
-
-
 The threshold can therefore be selected according to the desired balance between:
 
-
-
-\*\*False Green predictions\*\*
-
-
+**False Green predictions**
 
 and
 
+**False Red predictions**
 
+---
 
-\*\*False Red predictions\*\*
+# Explainability
 
-
-
-\---
-
-
-
-\# Explainability
-
-
-
-The classifier is also analyzed using \*\*Grad-CAM++\*\*.
-
-
+The classifier is also analyzed using **Grad-CAM++**.
 
 Grad-CAM++ is used to visualize which regions of the input image contribute most strongly to the model's prediction.
 
-
-
 This is particularly useful for analyzing incorrect predictions.
-
-
 
 The analysis can help determine whether the classifier is actually focusing on the traffic light or exploiting unintended visual cues such as:
 
-
-
-\- Background
-
-\- Buildings
-
-\- Sky
-
-\- Poles
-
-\- Reflections
-
-\- Image borders
-
-\- Other objects
-
-
+- Background
+- Buildings
+- Sky
+- Poles
+- Reflections
+- Image borders
+- Other objects
 
 Grad-CAM++ is especially valuable when investigating false positives and false negatives.
 
+---
 
-
-\---
-
-
-
-\# Project Structure
-
-
+# Project Structure
 
 The main project structure is:
 
-
-
 `tfm/`
 
+- `data/`
+  - `annotation/`
+  - `annotation_exports/`
+    - `dataset_v1.json`
+    - `dataset_v2.json`
+    - `test_diurn.json`
+    - `test_nocturn.json`
+  - `datasets/`
+    - `yolo/`
+    - `yolo_test/`
+      - `diurn/`
+      - `nocturn/`
+    - `classifier/`
+  - `splits/`
+    - `split_v1.json`
+    - `split_v2.json`
 
+- `scripts/`
+  - `dataset/`
+    - `generate_yolo_dataset.py`
+    - `generate_yolo_test_dataset.py`
+    - `generate_classifier_dataset.py`
+    - `generate_classifier_test_dataset.py`
+  - `utils/`
+    - `dataset_functions.py`
 
-\- `data/`
+- `results/`
+  - `classifier/`
+  - `yolo/`
 
-&#x20; - `annotation/`
+- `notebooks/`
 
-&#x20; - `annotation\_exports/`
+- `requirements/`
 
-&#x20;   - `dataset\_v1.json`
+- `README.md`
 
-&#x20;   - `dataset\_v2.json`
+---
 
-&#x20;   - `test\_diurn.json`
-
-&#x20;   - `test\_nocturn.json`
-
-&#x20; - `datasets/`
-
-&#x20;   - `yolo/`
-
-&#x20;   - `yolo\_test/`
-
-&#x20;     - `diurn/`
-
-&#x20;     - `nocturn/`
-
-&#x20;   - `classifier/`
-
-&#x20; - `splits/`
-
-&#x20;   - `split\_v1.json`
-
-&#x20;   - `split\_v2.json`
-
-
-
-\- `scripts/`
-
-&#x20; - `dataset/`
-
-&#x20;   - `generate\_yolo\_dataset.py`
-
-&#x20;   - `generate\_yolo\_test\_dataset.py`
-
-&#x20;   - `generate\_classifier\_dataset.py`
-
-&#x20;   - `generate\_classifier\_test\_dataset.py`
-
-&#x20; - `utils/`
-
-&#x20;   - `dataset\_functions.py`
-
-
-
-\- `results/`
-
-&#x20; - `classifier/`
-
-&#x20; - `yolo/`
-
-
-
-\- `notebooks/`
-
-
-
-\- `requirements/`
-
-
-
-\- `README.md`
-
-
-
-\---
-
-
-
-\# Environment
-
-
+# Environment
 
 The project uses Linux/WSL2 for the Deep Learning environment.
 
-
-
 The main technologies include:
 
-
-
-\- Python 3.10
-
-\- TensorFlow
-
-\- Keras
-
-\- PyTorch
-
-\- Ultralytics
-
-\- OpenCV
-
-\- NumPy
-
-\- Pandas
-
-\- Matplotlib
-
-\- Label Studio
-
-\- tf-keras-vis
-
-\- CUDA
-
-
+- Python 3.10
+- TensorFlow
+- Keras
+- PyTorch
+- Ultralytics
+- OpenCV
+- NumPy
+- Pandas
+- Matplotlib
+- Label Studio
+- tf-keras-vis
+- CUDA
+- WSL2
 
 GPU acceleration is used during model training when available.
 
+The main GPU used during development is:
 
+**NVIDIA GeForce RTX 3070 Laptop GPU**
 
-The main GPU used during development is an:
+---
 
-
-
-\*\*NVIDIA GeForce RTX 3070 Laptop GPU\*\*
-
-
-
-\---
-
-
-
-\# Installation
-
-
+# Installation
 
 Clone the repository:
 
-
-
 `git clone <repository-url>`
-
-
 
 Move into the project directory:
 
-
-
 `cd tfm`
-
-
 
 Create the required Python environments according to the project requirements.
 
-
-
 For example:
-
-
 
 `python3 -m venv env`
 
-
-
 Activate the environment:
-
-
 
 `source env/bin/activate`
 
-
-
 Install the required dependencies:
-
-
 
 `pip install -r requirements.txt`
 
-
-
 The project can use separate environments for different stages of the pipeline when required.
 
+---
 
+# Dataset Generation
 
-\---
-
-
-
-\# Dataset Generation
-
-
-
-\## Generate YOLO Training Dataset
-
-
+## Generate YOLO Training Dataset
 
 The YOLO dataset can be generated using:
 
-
-
-`python scripts/dataset/generate\_yolo\_dataset.py`
-
-
+`python scripts/dataset/generate_yolo_dataset.py`
 
 This reads the Label Studio export and generates:
 
-
-
 `data/datasets/yolo/`
 
+---
 
-
-\---
-
-
-
-\## Generate Independent YOLO Test Dataset
-
-
+## Generate Independent YOLO Test Dataset
 
 The independent daytime and nighttime test datasets can be generated using:
 
-
-
-`python scripts/dataset/generate\_yolo\_test\_dataset.py`
-
-
+`python scripts/dataset/generate_yolo_test_dataset.py`
 
 The resulting structure is:
 
+`data/datasets/yolo_test/`
 
+- `diurn/`
+- `nocturn/`
 
-`data/datasets/yolo\_test/`
+---
 
-
-
-\- `diurn/`
-
-\- `nocturn/`
-
-
-
-\---
-
-
-
-\## Generate Classifier Training Dataset
-
-
+## Generate Classifier Training Dataset
 
 The classifier dataset can be generated using:
 
-
-
-`python scripts/dataset/generate\_classifier\_dataset.py`
-
-
+`python scripts/dataset/generate_classifier_dataset.py`
 
 The generated structure is:
 
-
-
 `data/datasets/classifier/`
 
+- `train/`
+  - `Red/`
+  - `Green/`
+- `val/`
+  - `Red/`
+  - `Green/`
 
+---
 
-\- `train/`
-
-&#x20; - `Red/`
-
-&#x20; - `Green/`
-
-\- `val/`
-
-&#x20; - `Red/`
-
-&#x20; - `Green/`
-
-
-
-\---
-
-
-
-\## Generate Independent Classifier Test Dataset
-
-
+## Generate Independent Classifier Test Dataset
 
 The independent classifier datasets are generated from the dedicated Label Studio exports:
 
-
-
-\- `test\_diurn.json`
-
-\- `test\_nocturn.json`
-
-
+- `test_diurn.json`
+- `test_nocturn.json`
 
 The generated datasets maintain the same separation between daytime and nighttime conditions.
 
+---
 
-
-\---
-
-
-
-\# Reproducibility
-
-
+# Reproducibility
 
 The project attempts to maintain reproducibility through:
 
-
-
-\- Fixed random seeds
-
-\- Versioned datasets
-
-\- Versioned train/validation splits
-
-\- Automated dataset generation
-
-\- Explicit model configurations
-
-\- Saved model checkpoints
-
-\- Independent test datasets
-
-
+- Fixed random seeds
+- Versioned datasets
+- Versioned train/validation splits
+- Automated dataset generation
+- Explicit model configurations
+- Saved model checkpoints
+- Independent test datasets
 
 The main random seed used during development is:
 
-
-
 `SEED = 42`
-
-
 
 Dataset versions are explicitly defined, for example:
 
-
-
-`DATASET\_VERSION = "v2"`
-
-
+`DATASET_VERSION = "v2"`
 
 This allows different dataset versions to be regenerated and compared.
 
+---
 
-
-\---
-
-
-
-\# Results
-
-
+# Results
 
 The project evaluates the complete pipeline at multiple levels.
 
-
-
-\## Detection
-
-
+## Detection
 
 YOLO experiments compare:
 
-
-
-\*\*Model size × Input resolution × Detection performance × Inference cost\*\*
-
-
+**Model size × Input resolution × Detection performance × Inference cost**
 
 The goal is not simply to maximize mAP, but to find an appropriate model for the eventual assistive application.
 
+---
 
-
-\---
-
-
-
-\## Classification
-
-
+## Classification
 
 The classifier is evaluated independently from YOLO using ground-truth crops and, where appropriate, using detector-generated crops.
 
-
-
 This distinction allows the two sources of error to be studied separately:
 
-
-
-\*\*Detection error + Classification error = End-to-end system error\*\*
-
-
+**Detection error + Classification error = End-to-end system error**
 
 This is important because a classification error does not necessarily mean that the CNN itself is responsible. An incorrect or poorly localized bounding box produced by YOLO can also affect the final classification.
 
+---
 
-
-\---
-
-
-
-\# End-to-End Evaluation
-
-
+# End-to-End Evaluation
 
 The final system can be evaluated as:
 
+**Input image**
 
+↓
 
-Input image  
+**YOLO**
 
-↓  
+↓
 
-YOLO  
+**Traffic light detection**
 
-↓  
+↓
 
-Traffic light detection  
+**Bounding box crop**
 
-↓  
+↓
 
-Bounding box crop  
+**CNN Classifier**
 
-↓  
+↓
 
-CNN Classifier  
-
-↓  
-
-Red / Green
-
-
+**Red / Green**
 
 An incorrect final prediction can originate from several different sources:
 
-
-
-1\. The detector fails to detect the traffic light.
-
-2\. The detector produces an inaccurate bounding box.
-
-3\. The classifier incorrectly classifies a correct crop.
-
-4\. The decision threshold produces an inappropriate classification.
-
-
+1. The detector fails to detect the traffic light.
+2. The detector produces an inaccurate bounding box.
+3. The classifier incorrectly classifies a correct crop.
+4. The decision threshold produces an inappropriate classification.
 
 The independent test datasets allow the complete pipeline to be evaluated under previously unseen conditions.
 
+---
 
-
-\---
-
-
-
-\# Future Work
-
-
+# Future Work
 
 Potential future developments include:
 
-
-
-\- End-to-end real-time inference.
-
-\- Object tracking between consecutive frames.
-
-\- Temporal smoothing of predictions.
-
-\- Confidence-based decision logic.
-
-\- Integration with a mobile application.
-
-\- Conversion of the classifier to TensorFlow Lite.
-
-\- Quantization and model optimization.
-
-\- Optimization of YOLO for edge/mobile inference.
-
-\- Audio feedback for users with visual impairment.
-
-\- Evaluation in additional environmental conditions.
-
-\- Larger and more diverse independent test datasets.
-
-
+- End-to-end real-time inference.
+- Object tracking between consecutive frames.
+- Temporal smoothing of predictions.
+- Confidence-based decision logic.
+- Integration with a mobile application.
+- Conversion of the classifier to TensorFlow Lite.
+- Quantization and model optimization.
+- Optimization of YOLO for edge/mobile inference.
+- Audio feedback for users with visual impairment.
+- Evaluation in additional environmental conditions.
+- Larger and more diverse independent test datasets.
 
 A particularly relevant future improvement is temporal consistency.
 
-
-
 Instead of making an independent decision for every frame:
 
+**Frame 1 → Green**
 
+**Frame 2 → Green**
 
-Frame 1 → Green  
+**Frame 3 → Red**
 
-Frame 2 → Green  
+**Frame 4 → Green**
 
-Frame 3 → Red  
-
-Frame 4 → Green  
-
-Frame 5 → Green
-
-
+**Frame 5 → Green**
 
 the system could use temporal information to reduce unstable predictions.
 
+---
 
-
-\---
-
-
-
-\# Ethical and Safety Considerations
-
-
+# Ethical and Safety Considerations
 
 This project is an experimental research prototype.
 
-
-
-The predictions of the system should \*\*not be considered a reliable replacement for human perception or established mobility assistance systems\*\*.
-
-
+The predictions of the system should **not be considered a reliable replacement for human perception or established mobility assistance systems**.
 
 In particular, an incorrect `Green` prediction could potentially lead to unsafe behavior.
 
-
-
 For this reason, the evaluation places particular emphasis on:
 
+- False Green predictions
+- False Red predictions
+- Decision threshold selection
+- Independent testing
+- Nighttime performance
+- Generalization to unseen environments
 
+---
 
-\- False Green predictions
-
-\- False Red predictions
-
-\- Decision threshold selection
-
-\- Independent testing
-
-\- Nighttime performance
-
-\- Generalization to unseen environments
-
-
-
-\---
-
-
-
-\# Technologies
-
-
+# Technologies
 
 | Technology | Purpose |
-
 |---|---|
-
 | Python | Main programming language |
-
 | TensorFlow / Keras | CNN classifier |
-
 | PyTorch | YOLO training backend |
-
 | Ultralytics YOLO | Object detection |
-
 | OpenCV | Image processing |
-
 | NumPy | Numerical computation |
-
 | Pandas | Dataset processing |
-
 | Matplotlib | Visualization |
-
 | Label Studio | Image annotation |
-
 | tf-keras-vis | Grad-CAM++ explainability |
-
 | CUDA | GPU acceleration |
-
 | WSL2 | Linux development environment |
-
 | TensorFlow Lite | Planned mobile deployment |
 
+---
 
+# Author
 
-\---
+**Javier Galdeano**
 
-
-
-\# Author
-
-
-
-\*\*Javier Galdeano\*\*
-
-
-
-Data Scientist  
+Data Scientist
 
 Master's Degree in Data Science, Big Data and Artificial Intelligence
 
-
-
 This project is developed as part of a Master's Thesis focused on the application of Deep Learning and Computer Vision to assistive technology for people with visual impairment.
 
+---
 
-
-\---
-
-
-
-\# License
-
-
+# License
 
 This project is intended primarily for academic and research purposes.
 
-
-
 If a specific open-source license is added to the repository, the terms of that license will apply to the source code and associated materials.
-

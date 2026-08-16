@@ -1443,11 +1443,25 @@ def _create_test_dataset_yaml(
     """
     Crea el fichero dataset.yaml para un dataset YOLO
     independiente de testing.
+
+    Ultralytics requiere las claves train y val en el YAML,
+    aunque la evaluación se realice exclusivamente sobre test.
+
+    Por tanto, train y val apuntan al mismo directorio de imágenes
+    de test únicamente para satisfacer los requisitos del parser
+    de Ultralytics. La evaluación real utiliza siempre:
+
+        split="test"
+
     """
 
     dataset = {
 
         "path": str(yolo_dataset_dir),
+
+        "train": "images",
+
+        "val": "images",
 
         "test": "images",
 
