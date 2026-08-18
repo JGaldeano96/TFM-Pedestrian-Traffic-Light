@@ -2,9 +2,9 @@
 generate_CNN_test_metrics.py
 
 Evalúa los modelos CNN entrenados con dataset_v1 y dataset_v2
-sobre los datasets independientes de test diurno y nocturno.
+sobre los datasets independientes de test.
 
-Convención de clases utilizada en TODO el proyecto:
+Convención de clases:
 
     0 -> Red
     1 -> Green
@@ -13,7 +13,7 @@ La salida sigmoid de los modelos representa:
 
     P(Green)
 
-Por tanto:
+Regla de decisión:
 
     probability >= threshold -> Green
     probability < threshold  -> Red
@@ -54,22 +54,16 @@ from scripts.utils.test_functions import (
 # CLASS MAPPING
 # ============================================================
 
-# IMPORTANTE:
-#
-# image_dataset_from_directory() ordena las carpetas
-# alfabéticamente:
+# image_dataset_from_directory() asigna:
 #
 #     0 -> Green
 #     1 -> Red
 #
-# Sin embargo, los modelos han sido entrenados utilizando:
+# Las funciones de test invierten estas etiquetas para utilizar
+# nuestra convención:
 #
 #     0 -> Red
 #     1 -> Green
-#
-# Las funciones de test_functions.py se encargan de invertir
-# las etiquetas del dataset de test antes de calcular
-# las métricas.
 
 CLASS_NAMES = [
     "Red",
@@ -117,6 +111,23 @@ BATCH_SIZE = 32
 
 
 # ============================================================
+# MODEL THRESHOLDS
+# ============================================================
+
+# Threshold definitivo utilizado para la evaluación de cada
+# modelo.
+#
+# Estos valores han sido seleccionados a partir del análisis
+# realizado sobre la distribución de P(Green), ROC, Youden y
+# comportamiento de FP/FN.
+
+MODEL_THRESHOLDS = {
+    "dataset_v1": 0.047,
+    "dataset_v2": 0.800,
+}
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -132,6 +143,10 @@ if __name__ == "__main__":
 
     print()
 
+    # ========================================================
+    # CLASS MAPPING
+    # ========================================================
+
     print(
         "Class mapping:"
     )
@@ -146,6 +161,10 @@ if __name__ == "__main__":
 
     print()
 
+    # ========================================================
+    # MODEL OUTPUT
+    # ========================================================
+
     print(
         "Model output:"
     )
@@ -155,6 +174,10 @@ if __name__ == "__main__":
     )
 
     print()
+
+    # ========================================================
+    # DECISION RULE
+    # ========================================================
 
     print(
         "Decision rule:"
@@ -171,6 +194,23 @@ if __name__ == "__main__":
     print()
 
     # ========================================================
+    # MODEL THRESHOLDS
+    # ========================================================
+
+    print(
+        "Model thresholds:"
+    )
+
+    for dataset_version, threshold in MODEL_THRESHOLDS.items():
+
+        print(
+            f"  {dataset_version} -> "
+            f"{threshold:.3f}"
+        )
+
+    print()
+
+    # ========================================================
     # GENERATE METRICS
     # ========================================================
 
@@ -178,6 +218,10 @@ if __name__ == "__main__":
         results_root=RESULTS_ROOT,
         test_dataset_root=TEST_DATASET_ROOT,
         output_dir=OUTPUT_DIR,
+        thresholds={
+            "dataset_v1": 0.047,
+            "dataset_v2": 0.8,
+        },
         image_size=IMAGE_SIZE,
         batch_size=BATCH_SIZE,
     )

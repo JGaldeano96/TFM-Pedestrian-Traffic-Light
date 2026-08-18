@@ -625,7 +625,7 @@ def _get_classifier_predictions(
 def _calculate_classifier_metrics(
     y_true: np.ndarray,
     y_scores: np.ndarray,
-    threshold: float = 0.5,
+    threshold: float,
 ) -> dict:
     """
     Calcula las principales métricas de clasificación binaria.
@@ -645,17 +645,9 @@ def _calculate_classifier_metrics(
         P(Green) < threshold  -> Red
     """
 
-    # --------------------------------------------------------
-    # Predicciones
-    # --------------------------------------------------------
-
     y_pred = (
         y_scores >= threshold
     ).astype(int)
-
-    # --------------------------------------------------------
-    # Confusion matrix
-    # --------------------------------------------------------
 
     tn, fp, fn, tp = confusion_matrix(
         y_true,
@@ -666,18 +658,10 @@ def _calculate_classifier_metrics(
         ],
     ).ravel()
 
-    # --------------------------------------------------------
-    # Accuracy
-    # --------------------------------------------------------
-
     accuracy = accuracy_score(
         y_true,
         y_pred,
     )
-
-    # --------------------------------------------------------
-    # Precision
-    # --------------------------------------------------------
 
     precision = precision_score(
         y_true,
@@ -685,19 +669,11 @@ def _calculate_classifier_metrics(
         zero_division=0,
     )
 
-    # --------------------------------------------------------
-    # Recall
-    # --------------------------------------------------------
-
     recall = recall_score(
         y_true,
         y_pred,
         zero_division=0,
     )
-
-    # --------------------------------------------------------
-    # F1
-    # --------------------------------------------------------
 
     f1 = f1_score(
         y_true,
@@ -705,21 +681,11 @@ def _calculate_classifier_metrics(
         zero_division=0,
     )
 
-    # --------------------------------------------------------
-    # Specificity
-    # --------------------------------------------------------
-
     specificity = (
         tn / (tn + fp)
         if (tn + fp) > 0
         else 0.0
     )
-
-    # --------------------------------------------------------
-    # False Positive Rate
-    #
-    # FP = Red -> Green
-    # --------------------------------------------------------
 
     false_positive_rate = (
         fp / (fp + tn)
@@ -727,23 +693,11 @@ def _calculate_classifier_metrics(
         else 0.0
     )
 
-    # --------------------------------------------------------
-    # False Negative Rate
-    #
-    # FN = Green -> Red
-    # --------------------------------------------------------
-
     false_negative_rate = (
         fn / (fn + tp)
         if (fn + tp) > 0
         else 0.0
     )
-
-    # --------------------------------------------------------
-    # False Green Rate
-    #
-    # Porcentaje de rojos reales clasificados como Green.
-    # --------------------------------------------------------
 
     false_green_rate = (
         fp / (fp + tn)
@@ -788,6 +742,124 @@ def _calculate_classifier_metrics(
 
 
 # ============================================================
+# GUARDAR PREDICCIONES INDIVIDUALES
+# ============================================================
+
+def _save_classifier_predictions(
+    y_true: np.ndarray,
+    y_scores: np.ndarray,
+    file_paths: list[str],
+    output_path: Path,
+    threshold: float,
+) -> None:
+    """
+    Guarda las predicciones individuales realizadas sobre
+    el conjunto de test.
+
+    Convención:
+
+        0 = Red
+        1 = Green
+
+    probability_green:
+
+        P(Green)
+
+    error_type:
+
+        FP     -> Red real / Green predicho
+        FN     -> Green real / Red predicho
+        correct
+    """
+
+    y_pred = (
+        y_scores >= threshold
+    ).astype(int)
+
+    rows = []
+
+    for i in range(
+        len(y_true)
+    ):
+
+        true_label = int(
+            y_true[i]
+        )
+
+        predicted_label = int(
+            y_pred[i]
+        )
+
+        probability_green = float(
+            y_scores[i]
+        )
+
+        if (
+            true_label == 0
+            and predicted_label == 1
+        ):
+
+            error_type = "FP"
+
+        elif (
+            true_label == 1
+            and predicted_label == 0
+        ):
+
+            error_type = "FN"
+
+        else:
+
+            error_type = "correct"
+
+        true_class = (
+            "Red"
+            if true_label == 0
+            else "Green"
+        )
+
+        predicted_class = (
+            "Red"
+            if predicted_label == 0
+            else "Green"
+        )
+
+        rows.append({
+
+            "filename": Path(
+                file_paths[i]
+            ).name,
+
+            "filepath": file_paths[i],
+
+            "true_label": true_label,
+
+            "true_class": true_class,
+
+            "predicted_label": predicted_label,
+
+            "predicted_class": predicted_class,
+
+            "probability_green": (
+                probability_green
+            ),
+
+            "threshold": threshold,
+
+            "error_type": error_type,
+        })
+
+    predictions_df = pd.DataFrame(
+        rows
+    )
+
+    predictions_df.to_csv(
+        output_path,
+        index=False,
+    )
+
+
+# ============================================================
 # ROC / AUC / YOUDEN
 # ============================================================
 
@@ -796,20 +868,27 @@ def _calculate_roc_metrics(
     y_scores: np.ndarray,
 ) -> dict:
     """
-    Calcula ROC-AUC y threshold óptimo mediante Youden.
+    Calcula ROC-AUC y el threshold obtenido mediante
+    el índice de Youden.
 
     Convención:
 
         0 = Red
         1 = Green
 
-    y_scores:
+    y_scores representa:
 
         P(Green)
 
     Youden:
 
         J = TPR - FPR
+
+    IMPORTANTE:
+    El threshold de Youden se calcula únicamente como
+    información descriptiva.
+
+    NO se utiliza para realizar las predicciones finales.
     """
 
     # --------------------------------------------------------
@@ -822,7 +901,7 @@ def _calculate_roc_metrics(
     )
 
     # --------------------------------------------------------
-    # AUC
+    # ROC-AUC
     # --------------------------------------------------------
 
     roc_auc = auc(
@@ -831,7 +910,7 @@ def _calculate_roc_metrics(
     )
 
     # --------------------------------------------------------
-    # Eliminar threshold infinito
+    # Eliminar thresholds infinitos
     # --------------------------------------------------------
 
     valid = np.isfinite(
@@ -871,14 +950,20 @@ def _calculate_roc_metrics(
         ]
     )
 
-    return {
+    # --------------------------------------------------------
+    # Resultado
+    # --------------------------------------------------------
 
-        "roc_auc": roc_auc,
+    return {
+        "roc_auc": float(
+            roc_auc
+        ),
 
         "youden_threshold": (
             youden_threshold
         ),
     }
+
 
 
 # ============================================================
@@ -890,8 +975,20 @@ def _generate_classifier_threshold_metrics(
     y_scores: np.ndarray,
 ) -> pd.DataFrame:
     """
-    Calcula las métricas para thresholds entre 0.00 y 1.00
-    con pasos de 0.01.
+    Calcula las métricas principales para thresholds
+    comprendidos entre 0.00 y 1.00 con pasos de 0.01.
+
+    Convención:
+
+        0 = Red
+        1 = Green
+
+    La salida del modelo representa:
+
+        P(Green)
+
+    Este análisis es independiente del threshold operativo
+    definido manualmente para cada modelo.
     """
 
     thresholds = np.round(
@@ -923,160 +1020,14 @@ def _generate_classifier_threshold_metrics(
 
 
 # ============================================================
-# GUARDAR PREDICCIONES INDIVIDUALES
-# ============================================================
-
-def _save_classifier_predictions(
-    y_true: np.ndarray,
-    y_scores: np.ndarray,
-    file_paths: list[str],
-    output_path: Path,
-    threshold: float = 0.5,
-) -> None:
-    """
-    Guarda las predicciones individuales realizadas sobre
-    el conjunto de test.
-
-    Convención:
-
-        0 = Red
-        1 = Green
-
-    probability_green:
-
-        P(Green)
-
-    error_type:
-
-        FP     -> Red real / Green predicho
-        FN     -> Green real / Red predicho
-        correct
-    """
-
-    # --------------------------------------------------------
-    # Predicciones
-    # --------------------------------------------------------
-
-    y_pred = (
-        y_scores >= threshold
-    ).astype(int)
-
-    rows = []
-
-    # --------------------------------------------------------
-    # Crear filas
-    # --------------------------------------------------------
-
-    for i in range(
-        len(y_true)
-    ):
-
-        true_label = int(
-            y_true[i]
-        )
-
-        predicted_label = int(
-            y_pred[i]
-        )
-
-        probability_green = float(
-            y_scores[i]
-        )
-
-        # ----------------------------------------------------
-        # Tipo de error
-        # ----------------------------------------------------
-
-        if (
-            true_label == 0
-            and predicted_label == 1
-        ):
-
-            error_type = "FP"
-
-        elif (
-            true_label == 1
-            and predicted_label == 0
-        ):
-
-            error_type = "FN"
-
-        else:
-
-            error_type = "correct"
-
-        # ----------------------------------------------------
-        # Nombres legibles
-        # ----------------------------------------------------
-
-        true_class = (
-            "Red"
-            if true_label == 0
-            else "Green"
-        )
-
-        predicted_class = (
-            "Red"
-            if predicted_label == 0
-            else "Green"
-        )
-
-        # ----------------------------------------------------
-        # Guardar
-        # ----------------------------------------------------
-
-        rows.append({
-
-            "filename": Path(
-                file_paths[i]
-            ).name,
-
-            "filepath": file_paths[i],
-
-            "true_label": true_label,
-
-            "true_class": true_class,
-
-            "predicted_label": predicted_label,
-
-            "predicted_class": predicted_class,
-
-            "probability_green": (
-                probability_green
-            ),
-
-            "threshold": threshold,
-
-            "error_type": error_type,
-        })
-
-    # --------------------------------------------------------
-    # DataFrame
-    # --------------------------------------------------------
-
-    predictions_df = pd.DataFrame(
-        rows
-    )
-
-    # --------------------------------------------------------
-    # Guardar
-    # --------------------------------------------------------
-
-    predictions_df.to_csv(
-        output_path,
-        index=False,
-    )
-
-
-# ============================================================
 # GENERAR MÉTRICAS DEL TEST
 # ============================================================
-
 
 def generate_classifier_test_metrics(
     results_root: Path,
     test_dataset_root: Path,
     output_dir: Path,
+    thresholds: dict[str, float],
     image_size: tuple[int, int] = (128, 128),
     batch_size: int = 32,
 ) -> None:
@@ -1085,28 +1036,16 @@ def generate_classifier_test_metrics(
     y dataset_v2 sobre conjuntos independientes de test
     diurno y nocturno.
 
-    Convención utilizada en la evaluación:
+    Thresholds utilizados para la evaluación principal:
 
-        0 = Red
-        1 = Green
-
-    Salida sigmoid:
-
-        P(Green)
-
-    El threshold utilizado para las métricas principales
-    y las predicciones individuales es:
-
-        threshold = 0.5
-
-    El archivo de análisis por threshold mantiene todos
-    los thresholds entre 0.00 y 1.00 para permitir estudiar
-    el comportamiento del modelo.
+        dataset_v1 -> threshold definido manualmente
+        dataset_v2 -> threshold definido manualmente
 
     ROC-AUC y Youden se calculan únicamente como métricas
-    descriptivas del conjunto de test. El threshold de Youden
-    NO se utiliza para calcular las métricas principales ni
-    para generar las predicciones individuales.
+    descriptivas del conjunto de test.
+
+    El threshold de Youden NO sustituye al threshold
+    establecido para cada modelo.
     """
 
     print("=" * 70)
@@ -1129,21 +1068,21 @@ def generate_classifier_test_metrics(
     )
 
     print(
-        "\nDecision rule:"
-        "\n  probability >= 0.5 -> Green"
-        "\n  probability < 0.5  -> Red"
+        "\nEvaluation thresholds:"
     )
+
+    for dataset_version, threshold in thresholds.items():
+
+        print(
+            f"  {dataset_version} -> "
+            f"{threshold:.4f}"
+        )
 
     print(
-        "\nThreshold selection:"
-        "\n  Main evaluation threshold -> 0.5"
+        "\nDecision rule:"
+        "\n  probability >= threshold -> Green"
+        "\n  probability < threshold  -> Red"
     )
-
-    # ========================================================
-    # FIXED THRESHOLD
-    # ========================================================
-
-    TEST_THRESHOLD = 0.5
 
     # ========================================================
     # OUTPUT
@@ -1174,6 +1113,31 @@ def generate_classifier_test_metrics(
             / "best.keras"
         ),
     }
+
+    # ========================================================
+    # VALIDAR THRESHOLDS
+    # ========================================================
+
+    for dataset_version in models:
+
+        if dataset_version not in thresholds:
+
+            raise ValueError(
+                f"No se ha definido un threshold para "
+                f"{dataset_version}"
+            )
+
+        threshold = thresholds[
+            dataset_version
+        ]
+
+        if not 0 <= threshold <= 1:
+
+            raise ValueError(
+                f"El threshold de {dataset_version} "
+                f"debe estar entre 0 y 1. "
+                f"Valor recibido: {threshold}"
+            )
 
     # ========================================================
     # TEST DATASETS
@@ -1263,6 +1227,23 @@ def generate_classifier_test_metrics(
             model_path
         )
 
+        # ----------------------------------------------------
+        # Threshold manual del modelo
+        # ----------------------------------------------------
+
+        test_threshold = thresholds[
+            dataset_version
+        ]
+
+        print(
+            f"Evaluation threshold: "
+            f"{test_threshold:.4f}"
+        )
+
+        # ====================================================
+        # TEST DIURNO / NOCTURNO
+        # ====================================================
+
         for test_type, dataset_dir in test_types.items():
 
             print(
@@ -1274,6 +1255,7 @@ def generate_classifier_test_metrics(
                 f"\n  Model      : {dataset_version}"
                 f"\n  Test type  : {test_type}"
                 f"\n  Dataset    : {dataset_dir}"
+                f"\n  Threshold  : {test_threshold:.4f}"
             )
 
             # =================================================
@@ -1297,35 +1279,6 @@ def generate_classifier_test_metrics(
             print(
                 f"  Classes    : "
                 f"{dataset.class_names}"
-            )
-
-            # -------------------------------------------------
-            # Keras:
-            #
-            # 0 -> Green
-            # 1 -> Red
-            #
-            # Evaluación:
-            #
-            # 0 -> Red
-            # 1 -> Green
-            # -------------------------------------------------
-
-            print(
-                "  Original Keras mapping:"
-                "\n    0 -> Green"
-                "\n    1 -> Red"
-            )
-
-            print(
-                "  Evaluation mapping:"
-                "\n    0 -> Red"
-                "\n    1 -> Green"
-            )
-
-            print(
-                f"  Images     : "
-                f"{len(dataset.file_paths)}"
             )
 
             # =================================================
@@ -1372,13 +1325,6 @@ def generate_classifier_test_metrics(
 
             # =================================================
             # ROC / AUC / YOUDEN
-            #
-            # Se calculan como métricas descriptivas.
-            #
-            # IMPORTANTE:
-            #
-            # El threshold de Youden NO se utiliza para
-            # las métricas principales.
             # =================================================
 
             roc_metrics = _calculate_roc_metrics(
@@ -1397,20 +1343,22 @@ def generate_classifier_test_metrics(
             #
             # IMPORTANTE:
             #
-            # Se utiliza exclusivamente threshold = 0.5.
+            # Aquí se utiliza el threshold MANUAL definido
+            # para cada modelo.
             # =================================================
 
             metrics = _calculate_classifier_metrics(
                 y_true=y_true,
                 y_scores=y_scores,
-                threshold=TEST_THRESHOLD,
+                threshold=test_threshold,
             )
 
             # -------------------------------------------------
-            # Añadir ROC-AUC y Youden
+            # ROC-AUC + YOUDEN
             # -------------------------------------------------
 
             metrics.update({
+
                 "roc_auc": (
                     roc_metrics[
                         "roc_auc"
@@ -1441,10 +1389,6 @@ def generate_classifier_test_metrics(
                 ),
             })
 
-            # -------------------------------------------------
-            # Guardar resultados
-            # -------------------------------------------------
-
             metrics_results.append(
                 metrics
             )
@@ -1452,11 +1396,10 @@ def generate_classifier_test_metrics(
             # =================================================
             # THRESHOLD ANALYSIS
             #
-            # Este CSV mantiene TODOS los thresholds.
+            # Mantiene todos los thresholds entre 0.00 y 1.00
+            # para poder estudiar el comportamiento del modelo.
             #
-            # No utilizamos Youden aquí porque queremos
-            # analizar cómo cambia la performance del modelo
-            # según el threshold.
+            # NO modifica el threshold utilizado por el modelo.
             # =================================================
 
             threshold_df = (
@@ -1485,7 +1428,7 @@ def generate_classifier_test_metrics(
             # =================================================
             # INDIVIDUAL PREDICTIONS
             #
-            # Se utiliza threshold = 0.5.
+            # Utiliza el threshold MANUAL del modelo.
             # =================================================
 
             predictions_path = (
@@ -1502,7 +1445,7 @@ def generate_classifier_test_metrics(
                 y_scores=y_scores,
                 file_paths=file_paths,
                 output_path=predictions_path,
-                threshold=TEST_THRESHOLD,
+                threshold=test_threshold,
             )
 
             # =================================================
@@ -1510,12 +1453,12 @@ def generate_classifier_test_metrics(
             # =================================================
 
             print(
-                "\n  Evaluation threshold:"
+                "\n  Evaluation:"
             )
 
             print(
                 f"  Threshold  : "
-                f"{TEST_THRESHOLD:.4f}"
+                f"{test_threshold:.4f}"
             )
 
             print(
@@ -1574,7 +1517,7 @@ def generate_classifier_test_metrics(
             )
 
     # ========================================================
-    # GUARDAR MÉTRICAS
+    # GUARDAR MÉTRICAS PRINCIPALES
     # ========================================================
 
     metrics_df = pd.DataFrame(
@@ -1642,9 +1585,15 @@ def generate_classifier_test_metrics(
     )
 
     print(
-        "\nEvaluation threshold:"
-        f"\n  {TEST_THRESHOLD:.4f}"
+        "\nEvaluation thresholds:"
     )
+
+    for dataset_version, threshold in thresholds.items():
+
+        print(
+            f"  {dataset_version}: "
+            f"{threshold:.4f}"
+        )
 
     print(
         "=" * 70
