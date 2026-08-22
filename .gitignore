@@ -32,6 +32,12 @@ data/**
 !data/**/
 !data/**/.gitkeep
 
+# Exportaciones y particiones necesarias para reproducibilidad
+!data/annotation_exports/
+!data/annotation_exports/**
+!data/splits/
+!data/splits/**
+
 
 # ============================================================
 # YOLO / DEEP LEARNING
@@ -41,6 +47,10 @@ data/**
 *.pt
 *.pth
 *.onnx
+
+# Versionar los modelos finales del proyecto
+!models/
+!models/**
 
 # Resultados de entrenamiento
 results/
