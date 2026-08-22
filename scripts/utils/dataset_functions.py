@@ -7,6 +7,8 @@ import shutil
 import yaml
 import cv2
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
 
 ################################################
 # SPLIT_DATASET.PY
@@ -383,7 +385,7 @@ def _parse_task(task: dict) -> list[dict]:
 
     relative_path = image_path.split("?d=")[-1]
 
-    full_path = Path("/home/jgaldeano/tfm") / relative_path
+    full_path = ROOT_DIR / relative_path
 
     video_id = full_path.parent.name
     filename = full_path.name

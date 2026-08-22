@@ -3,8 +3,15 @@ import json
 from collections import Counter, defaultdict
 from statistics import mean, median, stdev
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
 # Ruta al JSON exportado por Label Studio
-JSON_PATH = Path("/home/jgaldeano/tfm/data/annotation_exports/dataset_v2.json")
+JSON_PATH = (
+    ROOT_DIR
+    / "data"
+    / "annotation_exports"
+    / "dataset_v2.json"
+)
 
 
 def print_section(title):

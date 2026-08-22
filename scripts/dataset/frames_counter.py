@@ -13,7 +13,14 @@ from pathlib import Path
 # CONFIGURACIÓN
 # ============================================================
 
-FRAMES_DIR = Path("/home/jgaldeano/tfm/data/source_data/frames")
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
+FRAMES_DIR = (
+    ROOT_DIR
+    / "data"
+    / "source_data"
+    / "frames"
+)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 

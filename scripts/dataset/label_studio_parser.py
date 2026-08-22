@@ -17,16 +17,19 @@ sys.path.insert(0, str(ROOT_DIR))
 from scripts.utils.dataset_functions import load_dataset
 
 
+JSON_PATH = (
+    ROOT_DIR
+    / "data"
+    / "annotation_exports"
+    / "dataset_v1.json"
+)
+
+
 # ============================================================
 # MAIN
 # ============================================================
 
 if __name__ == "__main__":
-
-    JSON_PATH = Path(
-        "/home/jgaldeano/tfm/data/annotation_exports/dataset_v1.json"
-    )
-
     df = load_dataset(JSON_PATH)
 
     print("=" * 70)

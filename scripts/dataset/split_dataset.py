@@ -21,13 +21,17 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from pathlib import Path
-
-from label_studio_parser import load_dataset
-
 from scripts.utils.dataset_functions import (
+    load_dataset,
     split_dataset,
     summarize_split,
+)
+
+JSON_PATH = (
+    ROOT_DIR
+    / "data"
+    / "annotation_exports"
+    / "dataset_v1.json"
 )
 
 
@@ -36,11 +40,6 @@ from scripts.utils.dataset_functions import (
 # ============================================================
 
 if __name__ == "__main__":
-
-    JSON_PATH = Path(
-        "/home/jgaldeano/tfm/data/annotation_exports/dataset_v1.json"
-    )
-
     df = load_dataset(JSON_PATH)
 
     split = split_dataset(

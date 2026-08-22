@@ -30,6 +30,7 @@ The project combines an object detector based on **YOLO** with a dedicated **CNN
 - [Project Structure](#project-structure)
 - [Environment](#environment)
 - [Installation](#installation)
+- [Streamlit Demo](#streamlit-demo)
 - [Dataset Generation](#dataset-generation)
 - [Reproducibility](#reproducibility)
 - [Results](#results)
@@ -605,14 +606,28 @@ The main project structure is:
     - `generate_classifier_test_dataset.py`
   - `utils/`
     - `dataset_functions.py`
+  - `streamlit/`
+    - `launcher.py`
 
 - `results/`
   - `classifier/`
   - `yolo/`
 
+- `models/`
+  - `classifier/dataset_v2/classifier_v2.onnx`
+  - `yolo/dataset_v2/`
+
+- `tfm_demo/`
+  - `config.py`
+  - `model_loading.py`
+  - `inference.py`
+  - `video_processing.py`
+
+- `app.py`
+
 - `notebooks/`
 
-- `requirements/`
+- `requirements.txt`
 
 - `README.md`
 
@@ -671,6 +686,118 @@ Install the required dependencies:
 `pip install -r requirements.txt`
 
 The project can use separate environments for different stages of the pipeline when required.
+
+---
+
+# Streamlit Demo
+
+The repository includes a functional video demo for the thesis presentation. It runs the complete pipeline without TensorFlow:
+
+**MP4 → visual adjustments → YOLO dataset V2 → largest valid box → ONNX Runtime classifier V2 → annotated MP4**
+
+## Demo installation
+
+The target is Python 3.10 in the existing YOLO environment. From the repository root:
+
+```bash
+source /home/jgaldeano/envs/yolo/bin/activate
+pip uninstall -y onnxruntime
+pip install -r requirements.txt
+```
+
+`requirements.txt` contains only the direct runtime dependencies of the demo. It deliberately does not include TensorFlow or Keras; classification is performed exclusively with the CUDA build of ONNX Runtime. The CPU package is removed first to prevent both ONNX Runtime distributions from sharing the same Python module.
+
+Both stages prefer the first NVIDIA GPU. YOLO receives `device="cuda:0"` explicitly and the classifier requests `CUDAExecutionProvider`. If CUDA is unavailable or blocked by WSL/Windows, the application remains usable with CPU and shows that fallback prominently instead of reporting GPU execution incorrectly.
+
+## Expected model layout
+
+Model paths are centralized in `tfm_demo/config.py`. The application expects only dataset V2 artifacts:
+
+```text
+models/
+├── classifier/
+│   └── dataset_v2/
+│       └── classifier_v2.onnx
+└── yolo/
+    └── dataset_v2/
+        ├── yolo26n_640_dataset_v2_best.pt
+        ├── yolo26n_800_dataset_v2_best.pt
+        ├── yolo26n_960_dataset_v2_best.pt
+        ├── yolo26n_1088_dataset_v2_best.pt
+        ├── yolo26s_640_dataset_v2_best.pt
+        ├── yolo26s_800_dataset_v2_best.pt
+        ├── yolo26s_960_dataset_v2_best.pt
+        └── yolo26s_1088_dataset_v2_best.pt
+```
+
+These files are safe copies of the corresponding `best.pt` and `classifier.onnx` artifacts under `results/`; the originals are not moved. Model binaries remain excluded by `.gitignore`, so they must be provisioned locally when the repository is cloned on another machine.
+
+## Starting the application
+
+Run the following exact command from the repository root:
+
+```bash
+source /home/jgaldeano/envs/yolo/bin/activate
+streamlit run app.py
+```
+
+The repository also provides a launcher suitable for the IDE **Run** action:
+
+```bash
+source /home/jgaldeano/envs/yolo/bin/activate
+python scripts/streamlit/launcher.py
+```
+
+Any additional Streamlit arguments are forwarded, for example `python scripts/streamlit/launcher.py --server.port 8502`.
+
+Upload an MP4, select the YOLO architecture and trained input resolution, choose the thresholds and visual adjustments, and press **Procesar vídeo**. The application shows the transformed and annotated input during processing, plays the final result and exposes an MP4 download together with detection and performance metrics.
+
+## Controls and decision convention
+
+- YOLO architecture: YOLO26n or YOLO26s, always trained on dataset V2.
+- YOLO resolution: 640, 800, 960 or 1088 pixels; each option loads its own V2 `best.pt`.
+- Closest traffic light: after clipping boxes to the image, only the valid box with the largest area is cropped, classified and drawn. Confidence breaks an exact area tie.
+- Brightness: -100 to +100.
+- Contrast: 0.50× to 1.50×.
+- Saturation: 0.00× to 2.00×.
+- YOLO confidence threshold and classifier decision threshold.
+- Final playback speed: 0.50× to 2.00×. At the default 1.00× every frame is retained and the original FPS are preserved, so a 60 FPS recording remains approximately 60 FPS.
+- Optional live preview, disabled by default to reduce interface overhead. It shows individual frames at inference speed, not real-time playback. Its frequency can be set to every 1, 2, 5, 10, 20 or 30 processed frames and never changes the generated video.
+- Output audio: disabled by default for presentation-ready downloads. It can be enabled to preserve the source audio, synchronized with the selected playback speed.
+- Output resolution: original, Full HD, HD or compact. The image is fitted inside the selected limit without cropping, distortion or upscaling; HD is the default for easier display on laptops and projectors.
+- Player size: compact (360 px), medium (480 px), large (720 px) or the full available width. Its height is also capped at 70% of the browser window so portrait videos fit on screen. This only changes the Streamlit layout, not the downloaded MP4.
+- Optional temporal EMA compares only the current closest box with the previous frame by IoU. It has no identities and is not a tracking system. Labels always display raw `P(Green)` and, when enabled, the separate EMA value used for the decision.
+
+The mandatory binary convention is:
+
+- `Red = 0`
+- `Green = 1`
+- classifier output = `P(Green)`
+- `P(Green) < threshold` → `Red`
+- `P(Green) >= threshold` → `Green`
+
+The exported ONNX declares a float32 NHWC input `[N, 128, 128, 3]`. Crops are converted from OpenCV BGR to RGB and sent in the original 0–255 range because the trained `Rescaling(1/255)` layer is embedded in the ONNX graph. The output `green_probability [N, 1]` is checked as one finite probability per crop.
+
+## FFmpeg and video compatibility
+
+OpenCV first writes an intermediate MP4 while preserving aspect ratio. The selected resolution preset only downsizes: for example, a vertical 1080×1920 source fitted to HD becomes 404×720. At 1.00× it preserves the original FPS and duration. When another playback speed is selected, every frame is still written and the output FPS are multiplied by that factor. When FFmpeg with `libx264` is available, the final file is converted to H.264/yuv420p with web fast-start metadata. Audio is omitted by default; when explicitly enabled, the source track is encoded as AAC and synchronized with the selected speed.
+
+Verify FFmpeg with:
+
+```bash
+ffmpeg -version
+```
+
+If FFmpeg is absent or H.264 conversion fails, the app returns the OpenCV MP4V file and displays a warning. MP4V playback depends on the browser.
+
+## Known demo limitations
+
+- Processing is offline, not real time, and high-resolution YOLO variants can be slow without a GPU.
+- The live preview cannot run at 60 FPS unless the complete inference pipeline itself reaches 60 FPS. It is only a progress visualization; playback speed is evaluated in the final video player.
+- Temporal stabilization only compares consecutive largest boxes by IoU; it does not track identities. Fast camera movement can reset the EMA.
+- There is no concept of unique traffic lights. Counts represent frames in which a closest valid detection was selected and classified.
+- Uploaded and generated videos are kept in memory by the Streamlit session; very long files require substantial RAM.
+- The prototype is for academic demonstration and must not be used as a safety-critical crossing aid.
 
 ---
 
