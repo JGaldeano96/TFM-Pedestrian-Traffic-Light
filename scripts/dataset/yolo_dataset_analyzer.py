@@ -32,7 +32,7 @@ JSON_PATH = (
     ROOT_DIR
     / "data"
     / "annotation_exports"
-    / "dataset_v2.json"
+    / "test_nocturn.json"
 )
 
 
