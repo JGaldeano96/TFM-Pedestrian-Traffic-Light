@@ -15,3 +15,10 @@ data/**
 !data/annotation_exports/**
 !data/splits/
 !data/splits/**
+
+# =============================================================================
+# SALIDAS DE ENTRENAMIENTO
+# =============================================================================
+
+# Resultados regenerables creados por Ultralytics durante entrenamiento/inferencia.
+runs/
