@@ -20,7 +20,7 @@
 # =============================================================================
 
 
-"""Preprocesamiento, clasificación, estabilización y anotación de fotogramas."""
+"""Preprocesamiento, clasificación y anotación de fotogramas."""
 
 from dataclasses import dataclass
 from typing import Sequence
@@ -51,10 +51,8 @@ class DetectionPrediction:
 
     bbox: tuple[int, int, int, int]
     yolo_confidence: float
-    raw_green_probability: float
-    decision_green_probability: float
+    green_probability: float
     state: str
-    stabilized: bool
 
 
 @dataclass(frozen=True)
@@ -65,13 +63,6 @@ class SelectedDetection:
     yolo_confidence: float
 
 
-@dataclass
-class _TemporalState:
-    bbox: tuple[int, int, int, int]
-    ema_probability: float
-    last_frame: int
-
-
 def apply_visual_adjustments(
     frame_bgr: np.ndarray,
     adjustments: VisualAdjustments,
@@ -80,6 +71,13 @@ def apply_visual_adjustments(
 
     if frame_bgr.ndim != 3 or frame_bgr.shape[2] != 3:
         raise InferenceError("El fotograma debe ser una imagen BGR de tres canales.")
+
+    if (
+        adjustments.brightness == 0
+        and np.isclose(adjustments.contrast, 1.0)
+        and np.isclose(adjustments.saturation, 1.0)
+    ):
+        return frame_bgr
 
     adjusted = frame_bgr.astype(np.float32)
     adjusted = (
@@ -220,78 +218,6 @@ def predict_green_probabilities(
     return np.clip(probabilities, 0.0, 1.0)
 
 
-def bbox_iou(
-    first: tuple[int, int, int, int],
-    second: tuple[int, int, int, int],
-) -> float:
-    """Calcula la intersección sobre unión de dos cajas XYXY."""
-
-    intersection_width = max(0, min(first[2], second[2]) - max(first[0], second[0]))
-    intersection_height = max(0, min(first[3], second[3]) - max(first[1], second[1]))
-    intersection = intersection_width * intersection_height
-    first_area = max(0, first[2] - first[0]) * max(0, first[3] - first[1])
-    second_area = max(0, second[2] - second[0]) * max(0, second[3] - second[1])
-    union = first_area + second_area - intersection
-    return float(intersection / union) if union else 0.0
-
-
-class TemporalEmaSmoother:
-    """EMA entre cajas consecutivas sin tracking ni identidades persistentes."""
-
-    def __init__(
-        self,
-        alpha: float = 0.4,
-        iou_threshold: float = 0.3,
-        max_missed_frames: int = 3,
-    ) -> None:
-        if not 0.0 < alpha <= 1.0:
-            raise ValueError("alpha debe pertenecer a (0, 1].")
-        self.alpha = alpha
-        self.iou_threshold = iou_threshold
-        self.max_missed_frames = max_missed_frames
-        self._previous: _TemporalState | None = None
-
-    def update(
-        self,
-        bboxes: Sequence[tuple[int, int, int, int]],
-        raw_probabilities: Sequence[float],
-        frame_index: int,
-    ) -> list[float]:
-        """Suaviza la única detección cercana respecto al fotograma anterior."""
-
-        if len(bboxes) != len(raw_probabilities):
-            raise ValueError("Debe existir una probabilidad por bounding box.")
-        if len(bboxes) > 1:
-            raise ValueError("La EMA solo admite la detección cercana seleccionada.")
-        if not bboxes:
-            if (
-                self._previous is not None
-                and frame_index - self._previous.last_frame > self.max_missed_frames
-            ):
-                self._previous = None
-            return []
-
-        bbox = bboxes[0]
-        raw_probability = float(raw_probabilities[0])
-        can_smooth = (
-            self._previous is not None
-            and frame_index - self._previous.last_frame <= self.max_missed_frames
-            and bbox_iou(bbox, self._previous.bbox) >= self.iou_threshold
-        )
-        ema_probability = raw_probability
-        if can_smooth and self._previous is not None:
-            ema_probability = (
-                self.alpha * raw_probability
-                + (1.0 - self.alpha) * self._previous.ema_probability
-            )
-        self._previous = _TemporalState(
-            bbox=bbox,
-            ema_probability=ema_probability,
-            last_frame=frame_index,
-        )
-        return [ema_probability]
-
-
 def annotate_frame(
     frame_bgr: np.ndarray,
     predictions: Sequence[DetectionPrediction],
@@ -311,9 +237,7 @@ def annotate_frame(
         first_line = (
             f"{prediction.state}  |  YOLO {prediction.yolo_confidence:.2f}"
         )
-        second_line = f"P(Green) {prediction.raw_green_probability:.2f}"
-        if prediction.stabilized:
-            second_line += f"  |  EMA {prediction.decision_green_probability:.2f}"
+        second_line = f"P(Green) {prediction.green_probability:.2f}"
 
         line_height = max(17, int(round(25 * scale)))
         text_scale = max(0.42, 0.58 * scale)

@@ -41,7 +41,6 @@ DEFAULT_YOLO_IMAGE_SIZE = 1088
 
 DEFAULT_YOLO_CONFIDENCE = 0.25
 DEFAULT_CLASSIFIER_THRESHOLD = 0.50
-DEFAULT_EMA_ALPHA = 0.40
 
 
 @dataclass(frozen=True)
@@ -83,4 +82,3 @@ def all_yolo_variants() -> tuple[YoloVariant, ...]:
         for architecture in YOLO_ARCHITECTURES
         for image_size in YOLO_IMAGE_SIZES
     )
-

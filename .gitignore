@@ -1,87 +1,17 @@
-# ============================================================
-# PYTHON
-# ============================================================
+# =============================================================================
+# DATA
+# =============================================================================
 
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Entornos virtuales
-.venv/
-venv/
-env/
-.env/
-
-
-# ============================================================
-# VISUAL STUDIO CODE
-# ============================================================
-
-.vscode/
-
-
-# ============================================================
-# DATASETS
-# ============================================================
-
-# Ignorar datasets completos
+# No versionar el contenido pesado o regenerable de data/.
 data/**
 
-# Mantener estructura de carpetas
+# Conservar la estructura mediante archivos .gitkeep.
 !data/
 !data/**/
 !data/**/.gitkeep
 
-# Exportaciones y particiones necesarias para reproducibilidad
+# Versionar completamente las anotaciones exportadas y las particiones.
 !data/annotation_exports/
 !data/annotation_exports/**
 !data/splits/
 !data/splits/**
-
-
-# ============================================================
-# YOLO / DEEP LEARNING
-# ============================================================
-
-# Pesos entrenados
-*.pt
-*.pth
-*.onnx
-
-# Versionar los modelos finales del proyecto
-!models/
-!models/**
-
-# Resultados de entrenamiento
-results/
-runs/
-
-# Checkpoints
-checkpoints/
-
-
-# ============================================================
-# NOTEBOOKS
-# ============================================================
-
-.ipynb_checkpoints/
-
-
-# ============================================================
-# SISTEMA
-# ============================================================
-
-# Windows
-Thumbs.db
-desktop.ini
-
-# Linux
-*.swp
-*.swo
-
-
-# ============================================================
-# LOGS
-# ============================================================
-
-*.log

@@ -760,13 +760,14 @@ Upload an MP4, select the YOLO architecture and trained input resolution, choose
 - Brightness: -100 to +100.
 - Contrast: 0.50× to 1.50×.
 - Saturation: 0.00× to 2.00×.
+- Neutral visual settings bypass image conversion entirely, avoiding unnecessary full-resolution preprocessing while preserving the input pixels exactly.
 - YOLO confidence threshold and classifier decision threshold.
-- Final playback speed: 0.50× to 2.00×. At the default 1.00× every frame is retained and the original FPS are preserved, so a 60 FPS recording remains approximately 60 FPS.
+- Final playback speed is fixed at 1.00×: every frame is retained and the original FPS are preserved, so a 60 FPS recording remains approximately 60 FPS.
 - Optional live preview, disabled by default to reduce interface overhead. It shows individual frames at inference speed, not real-time playback. Its frequency can be set to every 1, 2, 5, 10, 20 or 30 processed frames and never changes the generated video.
-- Output audio: disabled by default for presentation-ready downloads. It can be enabled to preserve the source audio, synchronized with the selected playback speed.
+- Output audio: disabled by default for presentation-ready downloads. It can be enabled to preserve the source audio.
 - Output resolution: original, Full HD, HD or compact. The image is fitted inside the selected limit without cropping, distortion or upscaling; HD is the default for easier display on laptops and projectors.
 - Player size: compact (360 px), medium (480 px), large (720 px) or the full available width. Its height is also capped at 70% of the browser window so portrait videos fit on screen. This only changes the Streamlit layout, not the downloaded MP4.
-- Optional temporal EMA compares only the current closest box with the previous frame by IoU. It has no identities and is not a tracking system. Labels always display raw `P(Green)` and, when enabled, the separate EMA value used for the decision.
+- Performance summary: the application reports total processed frames per second for the complete pipeline. YOLO and ONNX classifier latencies are also measured separately in milliseconds, including minimum, mean, median and maximum. YOLO has one measurement per frame; the classifier has one only when a valid closest detection is available.
 
 The mandatory binary convention is:
 
@@ -780,7 +781,7 @@ The exported ONNX declares a float32 NHWC input `[N, 128, 128, 3]`. Crops are co
 
 ## FFmpeg and video compatibility
 
-OpenCV first writes an intermediate MP4 while preserving aspect ratio. The selected resolution preset only downsizes: for example, a vertical 1080×1920 source fitted to HD becomes 404×720. At 1.00× it preserves the original FPS and duration. When another playback speed is selected, every frame is still written and the output FPS are multiplied by that factor. When FFmpeg with `libx264` is available, the final file is converted to H.264/yuv420p with web fast-start metadata. Audio is omitted by default; when explicitly enabled, the source track is encoded as AAC and synchronized with the selected speed.
+OpenCV first writes an intermediate MP4 while preserving aspect ratio. The selected resolution preset only downsizes: for example, a vertical 1080×1920 source fitted to HD becomes 404×720. The original FPS and duration are preserved at the fixed 1.00× speed. When FFmpeg with `libx264` is available, the final file is converted to H.264/yuv420p with web fast-start metadata. Audio is omitted by default; when explicitly enabled, the source track is encoded as AAC.
 
 Verify FFmpeg with:
 
@@ -793,8 +794,7 @@ If FFmpeg is absent or H.264 conversion fails, the app returns the OpenCV MP4V f
 ## Known demo limitations
 
 - Processing is offline, not real time, and high-resolution YOLO variants can be slow without a GPU.
-- The live preview cannot run at 60 FPS unless the complete inference pipeline itself reaches 60 FPS. It is only a progress visualization; playback speed is evaluated in the final video player.
-- Temporal stabilization only compares consecutive largest boxes by IoU; it does not track identities. Fast camera movement can reset the EMA.
+- The live preview cannot run at 60 FPS unless the complete inference pipeline itself reaches 60 FPS. It is only a progress visualization; the generated MP4 keeps the source FPS.
 - There is no concept of unique traffic lights. Counts represent frames in which a closest valid detection was selected and classified.
 - Uploaded and generated videos are kept in memory by the Streamlit session; very long files require substantial RAM.
 - The prototype is for academic demonstration and must not be used as a safety-critical crossing aid.

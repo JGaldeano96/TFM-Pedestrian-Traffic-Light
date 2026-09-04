@@ -34,7 +34,6 @@ import streamlit as st
 from tfm_demo.config import (
     CLASSIFIER_MODEL_PATH,
     DEFAULT_CLASSIFIER_THRESHOLD,
-    DEFAULT_EMA_ALPHA,
     DEFAULT_YOLO_ARCHITECTURE,
     DEFAULT_YOLO_CONFIDENCE,
     DEFAULT_YOLO_IMAGE_SIZE,
@@ -140,16 +139,83 @@ def _render_summary(result: dict[str, object]) -> None:
     )
     first_row[2].metric("🔴 Red", summary.red_predictions)
     first_row[3].metric("🟢 Green", summary.green_predictions)
-    second_row = st.columns(4)
-    second_row[0].metric("Tiempo total", f"{summary.elapsed_seconds:.1f} s")
-    second_row[1].metric("FPS inferencia", f"{summary.average_inference_fps:.2f}")
-    second_row[2].metric("FPS extremo a extremo", f"{summary.average_processing_fps:.2f}")
-    second_row[3].metric("Salida", summary.codec)
+    processing_fps = (
+        summary.frames / summary.elapsed_seconds
+        if summary.elapsed_seconds > 0
+        else 0.0
+    )
+    performance_row = st.columns(2)
+    performance_row[0].metric(
+        "Tiempo total de procesamiento",
+        f"{summary.elapsed_seconds:.1f} s",
+    )
+    performance_row[1].metric(
+        "Fotogramas procesados por segundo",
+        f"{processing_fps:.2f} FPS",
+        help=(
+            "Rendimiento global: incluye transformación, YOLO, clasificador, "
+            "anotación y codificación del vídeo."
+        ),
+    )
+
+    st.subheader("Latencia por modelo")
+    timing_rows = []
+    for stage, timing in (
+        ("Detector YOLO", summary.detector_timing),
+        ("Clasificador ONNX", summary.classifier_timing),
+    ):
+        timing_rows.append(
+            {
+                "Etapa": stage,
+                "Ejecuciones": timing.executions,
+                "Mínimo (ms)": (
+                    f"{timing.minimum_ms:.2f}"
+                    if timing.minimum_ms is not None
+                    else "—"
+                ),
+                "Promedio (ms)": (
+                    f"{timing.mean_ms:.2f}" if timing.mean_ms is not None else "—"
+                ),
+                "Mediana (ms)": (
+                    f"{timing.median_ms:.2f}"
+                    if timing.median_ms is not None
+                    else "—"
+                ),
+                "Máximo (ms)": (
+                    f"{timing.maximum_ms:.2f}"
+                    if timing.maximum_ms is not None
+                    else "—"
+                ),
+            }
+        )
+    st.table(timing_rows)
+    st.caption(
+        "YOLO se mide una vez por fotograma. El clasificador solo se mide en "
+        "fotogramas donde YOLO encuentra una caja válida para recortar."
+    )
+    if summary.classifier_timing.executions:
+        detector_total = summary.detector_timing.total_ms / 1000.0
+        classifier_total = summary.classifier_timing.total_ms / 1000.0
+        bottleneck = (
+            "Detector YOLO"
+            if detector_total >= classifier_total
+            else "Clasificador ONNX"
+        )
+        st.info(
+            f"Mayor coste acumulado entre los modelos: **{bottleneck}**. "
+            f"YOLO: {detector_total:.2f} s · "
+            f"clasificador: {classifier_total:.2f} s."
+        )
+    else:
+        st.info(
+            "El clasificador no se ejecutó porque YOLO no produjo ninguna "
+            "detección válida."
+        )
     st.caption(
         f"{summary.source_width}×{summary.source_height} → "
         f"{summary.output_width}×{summary.output_height} · "
         f"{summary.source_fps:.2f} FPS de entrada "
-        f"→ {summary.output_fps:.2f} FPS de salida ({summary.playback_speed:.2f}×) · "
+        f"→ {summary.output_fps:.2f} FPS de salida · "
         f"audio {'incluido' if summary.audio_included else 'eliminado'} · "
         f"modelo {result['model_label']} · umbral clasificador "
         f"{float(result['classifier_threshold']):.2f}"
@@ -268,22 +334,6 @@ def run_app() -> None:
         )
 
         st.divider()
-        temporal_smoothing = st.toggle(
-            "Estabilización temporal EMA",
-            value=False,
-            help=(
-                "Compara la caja más grande con la del fotograma anterior "
-                "mediante IoU; no usa tracking ni identidades."
-            ),
-        )
-        ema_alpha = st.slider(
-            "Peso del fotograma actual (α)",
-            min_value=0.10,
-            max_value=1.0,
-            value=DEFAULT_EMA_ALPHA,
-            step=0.05,
-            disabled=not temporal_smoothing,
-        )
         show_live_preview = st.toggle(
             "Mostrar previsualización durante el procesamiento",
             value=False,
@@ -307,24 +357,6 @@ def run_app() -> None:
             ),
             disabled=not show_live_preview,
         )
-        playback_speed = st.select_slider(
-            "Velocidad del MP4 final",
-            options=(0.5, 0.75, 1.0, 1.25, 1.5, 2.0),
-            value=1.0,
-            format_func=lambda value: (
-                f"{value:.2f}× · normal"
-                if value == 1.0
-                else f"{value:.2f}×"
-            ),
-            help=(
-                "A 1.00× se conservan los FPS originales: un vídeo grabado "
-                "a 60 FPS se genera a aproximadamente 60 FPS. No se elimina "
-                "ningún fotograma. Al cambiar este valor hay que volver a "
-                "pulsar Procesar vídeo."
-            ),
-            key="playback_speed",
-            on_change=_clear_previous_result,
-        )
         keep_audio = st.toggle(
             "Mantener audio en el vídeo procesado",
             value=False,
@@ -332,13 +364,12 @@ def run_app() -> None:
             on_change=_clear_previous_result,
             help=(
                 "Desactivado: elimina completamente la pista de audio del MP4. "
-                "Activado: conserva el audio de entrada y lo sincroniza con la "
-                "velocidad elegida."
+                "Activado: conserva el audio de entrada."
             ),
         )
         st.caption(
-            "La velocidad solo afecta al MP4 generado. La previsualización "
-            "depende de la inferencia y no representa su reproducción."
+            "El MP4 final conserva todos los fotogramas y se genera siempre "
+            "a velocidad normal (1×)."
         )
         output_size_label = st.selectbox(
             "Resolución del vídeo final",
@@ -498,10 +529,7 @@ def run_app() -> None:
                             contrast=contrast,
                             saturation=saturation,
                         ),
-                        temporal_smoothing=temporal_smoothing,
-                        ema_alpha=ema_alpha,
                         preview_every_frames=preview_every_frames,
-                        playback_speed=playback_speed,
                         keep_audio=keep_audio,
                         maximum_output_size=maximum_output_size,
                     ),
@@ -545,7 +573,7 @@ def run_app() -> None:
             st.caption(
                 f"MP4 generado a {summary.output_fps:.2f} FPS · "
                 f"duración aproximada {expected_duration:.2f} s · "
-                f"velocidad {summary.playback_speed:.2f}×"
+                "velocidad normal 1×"
             )
         _render_responsive_video(
             video_bytes,

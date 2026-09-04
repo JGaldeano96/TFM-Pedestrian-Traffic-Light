@@ -28,15 +28,15 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 import cv2
 import numpy as np
 import onnxruntime as ort
+import torch
 
 from tfm_demo.inference import (
     DetectionPrediction,
-    TemporalEmaSmoother,
     VisualAdjustments,
     annotate_frame,
     apply_visual_adjustments,
@@ -59,12 +59,21 @@ class VideoProcessingOptions:
     yolo_image_size: int
     yolo_device: str
     visual_adjustments: VisualAdjustments
-    temporal_smoothing: bool = False
-    ema_alpha: float = 0.4
     preview_every_frames: int = 5
-    playback_speed: float = 1.0
     keep_audio: bool = False
     maximum_output_size: tuple[int, int] | None = (1280, 720)
+
+
+@dataclass(frozen=True)
+class TimingStatistics:
+    """Distribución de latencias de una etapa de inferencia."""
+
+    executions: int
+    total_ms: float
+    minimum_ms: float | None
+    mean_ms: float | None
+    median_ms: float | None
+    maximum_ms: float | None
 
 
 @dataclass(frozen=True)
@@ -77,16 +86,14 @@ class VideoProcessingResult:
     red_predictions: int
     green_predictions: int
     elapsed_seconds: float
-    inference_seconds: float
-    average_inference_fps: float
-    average_processing_fps: float
+    detector_timing: TimingStatistics
+    classifier_timing: TimingStatistics
     source_width: int
     source_height: int
     output_width: int
     output_height: int
     source_fps: float
     output_fps: float
-    playback_speed: float
     codec: str
     audio_included: bool = False
     warning: str | None = None
@@ -94,6 +101,39 @@ class VideoProcessingResult:
 
 ProgressCallback = Callable[[int, int], None]
 PreviewCallback = Callable[[np.ndarray, np.ndarray, np.ndarray, int], None]
+
+
+def summarize_timings(durations_ms: Sequence[float]) -> TimingStatistics:
+    """Calcula estadísticas descriptivas de una secuencia de latencias en ms."""
+
+    if not durations_ms:
+        return TimingStatistics(
+            executions=0,
+            total_ms=0.0,
+            minimum_ms=None,
+            mean_ms=None,
+            median_ms=None,
+            maximum_ms=None,
+        )
+
+    values = np.asarray(durations_ms, dtype=np.float64)
+    if not np.all(np.isfinite(values)) or np.any(values < 0):
+        raise ValueError("Las duraciones deben ser valores finitos y no negativos.")
+    return TimingStatistics(
+        executions=int(values.size),
+        total_ms=float(values.sum()),
+        minimum_ms=float(values.min()),
+        mean_ms=float(values.mean()),
+        median_ms=float(np.median(values)),
+        maximum_ms=float(values.max()),
+    )
+
+
+def _synchronize_yolo_device(device: str) -> None:
+    """Sincroniza CUDA para que la medición de YOLO incluya el trabajo de GPU."""
+
+    if device.startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.synchronize(torch.device(device))
 
 
 def calculate_output_dimensions(
@@ -158,7 +198,6 @@ def _encode_browser_mp4(
     intermediate_path: Path,
     source_path: Path,
     output_path: Path,
-    playback_speed: float,
     keep_audio: bool,
 ) -> tuple[str, str | None]:
     ffmpeg = shutil.which("ffmpeg")
@@ -204,11 +243,6 @@ def _encode_browser_mp4(
         "+faststart",
     ])
     if keep_audio:
-        if not np.isclose(playback_speed, 1.0):
-            command.extend([
-                "-filter:a",
-                f"atempo={playback_speed:.6f}",
-            ])
         command.extend([
             "-c:a",
             "aac",
@@ -289,12 +323,7 @@ def process_video(
         source_fps = 25.0
         fps_warning = "El vídeo no declara FPS válidos; se utilizaron 25 FPS."
 
-    if not 0.5 <= options.playback_speed <= 2.0:
-        capture.release()
-        raise VideoProcessingError(
-            "La velocidad de reproducción debe estar entre 0.5× y 2.0×."
-        )
-    output_fps = source_fps * options.playback_speed
+    output_fps = source_fps
     output_width, output_height = calculate_output_dimensions(
         source_width,
         source_height,
@@ -315,13 +344,9 @@ def process_video(
             "OpenCV no pudo crear el vídeo MP4 de salida con el códec mp4v."
         )
 
-    smoother = (
-        TemporalEmaSmoother(alpha=options.ema_alpha)
-        if options.temporal_smoothing
-        else None
-    )
     frames = detections = red_predictions = green_predictions = 0
-    inference_seconds = 0.0
+    detector_durations_ms: list[float] = []
+    classifier_durations_ms: list[float] = []
 
     try:
         while True:
@@ -335,7 +360,13 @@ def process_video(
                 options.visual_adjustments,
             )
 
-            inference_started = time.perf_counter()
+            valid_bboxes: list[tuple[int, int, int, int]] = []
+            yolo_confidences: list[float] = []
+            crops: list[np.ndarray] = []
+            selected_detection = None
+
+            _synchronize_yolo_device(options.yolo_device)
+            detector_started = time.perf_counter()
             try:
                 yolo_results = detector.predict(
                     source=transformed_frame,
@@ -344,39 +375,37 @@ def process_video(
                     device=options.yolo_device,
                     verbose=False,
                 )
+                result = yolo_results[0] if yolo_results else None
+                boxes = getattr(result, "boxes", None)
+                if boxes is not None and len(boxes):
+                    raw_bboxes = boxes.xyxy.detach().cpu().numpy()
+                    raw_confidences = boxes.conf.detach().cpu().numpy()
+                    selected_detection = select_largest_valid_detection(
+                        raw_bboxes=raw_bboxes,
+                        raw_confidences=raw_confidences,
+                        frame_width=source_width,
+                        frame_height=source_height,
+                        minimum_confidence=options.yolo_confidence,
+                    )
+                _synchronize_yolo_device(options.yolo_device)
             except Exception as exc:
                 raise VideoProcessingError(
                     f"YOLO falló en el fotograma {frame_index + 1}: {exc}"
                 ) from exc
-            inference_seconds += time.perf_counter() - inference_started
+            detector_durations_ms.append(
+                (time.perf_counter() - detector_started) * 1000.0
+            )
 
-            valid_bboxes: list[tuple[int, int, int, int]] = []
-            yolo_confidences: list[float] = []
-            crops: list[np.ndarray] = []
-            result = yolo_results[0] if yolo_results else None
-            boxes = getattr(result, "boxes", None)
-            if boxes is not None and len(boxes):
-                raw_bboxes = boxes.xyxy.detach().cpu().numpy()
-                raw_confidences = boxes.conf.detach().cpu().numpy()
-                selected_detection = select_largest_valid_detection(
-                    raw_bboxes=raw_bboxes,
-                    raw_confidences=raw_confidences,
-                    frame_width=source_width,
-                    frame_height=source_height,
-                    minimum_confidence=options.yolo_confidence,
-                )
-                if selected_detection is not None:
-                    x1, y1, x2, y2 = selected_detection.bbox
-                    crop = transformed_frame[y1:y2, x1:x2]
-                    if crop.size:
-                        valid_bboxes.append(selected_detection.bbox)
-                        yolo_confidences.append(
-                            selected_detection.yolo_confidence
-                        )
-                        crops.append(crop)
+            if selected_detection is not None:
+                x1, y1, x2, y2 = selected_detection.bbox
+                crop = transformed_frame[y1:y2, x1:x2]
+                if crop.size:
+                    valid_bboxes.append(selected_detection.bbox)
+                    yolo_confidences.append(selected_detection.yolo_confidence)
+                    crops.append(crop)
 
             if crops:
-                inference_started = time.perf_counter()
+                classifier_started = time.perf_counter()
                 try:
                     raw_probabilities = predict_green_probabilities(
                         classifier_session,
@@ -388,29 +417,21 @@ def process_video(
                         f"El clasificador ONNX falló en el fotograma "
                         f"{frame_index + 1}: {exc}"
                     ) from exc
-                inference_seconds += time.perf_counter() - inference_started
+                classifier_durations_ms.append(
+                    (time.perf_counter() - classifier_started) * 1000.0
+                )
             else:
                 raw_probabilities = np.empty(0, dtype=np.float32)
 
-            if smoother is not None:
-                decision_probabilities = smoother.update(
-                    valid_bboxes,
-                    raw_probabilities,
-                    frame_index,
-                )
-            else:
-                decision_probabilities = raw_probabilities.tolist()
-
             frame_predictions: list[DetectionPrediction] = []
-            for bbox, yolo_confidence, raw_probability, decision_probability in zip(
+            for bbox, yolo_confidence, green_probability in zip(
                 valid_bboxes,
                 yolo_confidences,
                 raw_probabilities,
-                decision_probabilities,
             ):
                 state = (
                     "Green"
-                    if decision_probability >= options.classifier_threshold
+                    if green_probability >= options.classifier_threshold
                     else "Red"
                 )
                 if state == "Green":
@@ -421,10 +442,8 @@ def process_video(
                     DetectionPrediction(
                         bbox=bbox,
                         yolo_confidence=yolo_confidence,
-                        raw_green_probability=float(raw_probability),
-                        decision_green_probability=float(decision_probability),
+                        green_probability=float(green_probability),
                         state=state,
-                        stabilized=smoother is not None,
                     )
                 )
 
@@ -474,7 +493,6 @@ def process_video(
             intermediate_path,
             input_path,
             output_path,
-            options.playback_speed,
             options.keep_audio,
         )
     finally:
@@ -507,16 +525,14 @@ def process_video(
         red_predictions=red_predictions,
         green_predictions=green_predictions,
         elapsed_seconds=elapsed_seconds,
-        inference_seconds=inference_seconds,
-        average_inference_fps=(frames / inference_seconds if inference_seconds else 0.0),
-        average_processing_fps=(frames / elapsed_seconds if elapsed_seconds else 0.0),
+        detector_timing=summarize_timings(detector_durations_ms),
+        classifier_timing=summarize_timings(classifier_durations_ms),
         source_width=source_width,
         source_height=source_height,
         output_width=output_width,
         output_height=output_height,
         source_fps=source_fps,
         output_fps=output_fps,
-        playback_speed=options.playback_speed,
         codec=codec,
         audio_included=audio_included,
         warning=" ".join(warning_parts) or None,

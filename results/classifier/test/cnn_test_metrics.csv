@@ -1,0 +1,5 @@
+threshold,accuracy,precision,recall,f1,specificity,false_positive_rate,false_negative_rate,false_green_rate,TN,FP,FN,TP,roc_auc,youden_threshold,dataset,test_type,model_path,num_images
+0.047,0.9730392156862745,0.9648648648648649,0.9754098360655737,0.970108695652174,0.9711111111111111,0.028888888888888888,0.02459016393442623,0.028888888888888888,437,13,9,357,0.9981420765027322,0.040781982243061066,dataset_v1,diurn,/home/jgaldeano/tfm/results/classifier/dataset_v1/classifier_v1/best.keras,816
+0.047,1.0,1.0,1.0,1.0,1.0,0.0,0.0,0.0,615,0,0,504,1.0,0.9947668313980103,dataset_v1,nocturn,/home/jgaldeano/tfm/results/classifier/dataset_v1/classifier_v1/best.keras,1119
+0.8,0.9975490196078431,0.9972677595628415,0.9972677595628415,0.9972677595628415,0.9977777777777778,0.0022222222222222222,0.00273224043715847,0.0022222222222222222,449,1,1,365,0.9999757134183364,0.8768293261528015,dataset_v2,diurn,/home/jgaldeano/tfm/results/classifier/dataset_v2/classifier_v2/best.keras,816
+0.8,1.0,1.0,1.0,1.0,1.0,0.0,0.0,0.0,615,0,0,504,1.0,0.9999992847442627,dataset_v2,nocturn,/home/jgaldeano/tfm/results/classifier/dataset_v2/classifier_v2/best.keras,1119
